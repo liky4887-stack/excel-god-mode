@@ -1,17 +1,22 @@
+import { memo } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Search as SearchIcon } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
-import { SearchBar } from '@/components/SearchBar';
+import SearchBar from '@/components/SearchBar';
 import { searchInWorkbook } from '@/src/excelBridge';
 
-export default function SearchScreen() {
+function SearchScreen() {
   const { t } = useLanguage();
   const { workbook } = useExcel();
   const [query, setQuery] = useState('');
 
   const results = useMemo(() => workbook ? searchInWorkbook(workbook, query) : [], [workbook, query]);
+
+  const handleClearQuery = useCallback(() => {
+    setQuery('');
+  }, []);
 
   if (!workbook || workbook.sheets.length === 0) {
     return (
@@ -47,6 +52,8 @@ export default function SearchScreen() {
     </View>
   );
 }
+
+export default memo(SearchScreen);
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A', paddingTop: 60, paddingHorizontal: 20 },

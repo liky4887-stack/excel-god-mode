@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { History, RotateCcw, Trash2 } from 'lucide-react-native';
 import { SaveVersion } from '@/types';
@@ -9,7 +10,7 @@ interface Props {
   onDelete: () => void;
 }
 
-export function VersionCard({ version, onRollback, onDelete }: Props) {
+function VersionCard({ version, onRollback, onDelete }: Props) {
   const { t } = useLanguage();
   const d = new Date(version.createdAt);
   const dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
@@ -35,6 +36,8 @@ export function VersionCard({ version, onRollback, onDelete }: Props) {
     </View>
   );
 }
+
+export default memo(VersionCard);
 
 const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#222', borderRadius: 12, padding: 14, marginBottom: 10 },

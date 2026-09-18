@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -14,11 +14,15 @@ export default function ExportScreen() {
   const { workbook } = useExcel();
   const [exporting, setExporting] = useState<'xlsx' | 'pdf' | null>(null);
 
+  const handleBack = useCallback(() => {
+    router.back();
+  }, [router]);
+
   if (!workbook || workbook.sheets.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <ArrowLeft size={22} color="#FFF" strokeWidth={2} />
           </TouchableOpacity>
           <Text style={styles.title}>{t('exportFile')}</Text>
@@ -28,7 +32,7 @@ export default function ExportScreen() {
     );
   }
 
-  const handleExportXlsx = async () => {
+  const handleExportXlsx = useCallback(async () => {
     setExporting('xlsx');
     try {
       if (!workbook.originalBase64) throw new Error('No original buffer');
@@ -49,9 +53,9 @@ export default function ExportScreen() {
     } finally {
       setExporting(null);
     }
-  };
+  }, [workbook, t]);
 
-  const handleExportPdf = async () => {
+  const handleExportPdf = useCallback(async () => {
     setExporting('pdf');
     try {
       const { expoPrint } = await import('@/src/pdfExport');
@@ -70,12 +74,12 @@ export default function ExportScreen() {
     } finally {
       setExporting(null);
     }
-  };
+  }, [workbook, t]);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <ArrowLeft size={22} color="#FFF" strokeWidth={2} />
         </TouchableOpacity>
         <Text style={styles.title}>{t('exportFile')}</Text>

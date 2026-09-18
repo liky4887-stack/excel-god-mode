@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { useCallback, useState } from 'react';
 import { Search } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 
@@ -7,8 +9,13 @@ interface Props {
   onChangeText: (text: string) => void;
 }
 
-export function SearchBar({ value, onChangeText }: Props) {
+function SearchBar({ value, onChangeText }: Props) {
   const { t } = useLanguage();
+
+  const handleClear = useCallback(() => {
+    onChangeText('');
+  }, [onChangeText]);
+
   return (
     <View style={styles.container}>
       <Search size={20} color="#666" strokeWidth={2} />
@@ -22,13 +29,15 @@ export function SearchBar({ value, onChangeText }: Props) {
         autoCorrect={false}
       />
       {value.length > 0 && (
-        <TouchableOpacity onPress={() => onChangeText('')}>
+        <TouchableOpacity onPress={handleClear}>
           <Text style={styles.clear}>✕</Text>
         </TouchableOpacity>
       )}
     </View>
   );
 }
+
+export default memo(SearchBar);
 
 const styles = StyleSheet.create({
   container: {

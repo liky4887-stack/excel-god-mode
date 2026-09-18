@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -16,7 +16,11 @@ export default function ImportScreen() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handlePick = async () => {
+  const handleBack = useCallback(() => {
+    router.back();
+  }, [router]);
+
+  const handlePick = useCallback(async () => {
     setImporting(true); setError(null); setSuccess(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -43,12 +47,12 @@ export default function ImportScreen() {
     } finally {
       setImporting(false);
     }
-  };
+  }, [setWorkbookData, t, router]);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <ArrowLeft size={22} color="#FFF" strokeWidth={2} />
         </TouchableOpacity>
         <Text style={styles.title}>{t('importTemplate')}</Text>

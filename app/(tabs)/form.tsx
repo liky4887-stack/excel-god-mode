@@ -1,11 +1,11 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'expo-router';
-import { Plus, Save, Calculator, Trash2, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { Plus, Save, Calculator, Trash2 } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
-import { FormField } from '@/components/FormField';
-import { CalculationPreview } from '@/components/CalculationPreview';
+import FormField from '@/components/FormField';
+import CalculationPreview from '@/components/CalculationPreview';
 import { CustomFieldModal } from '@/components/CustomFieldModal';
 import { previewCalculations } from '@/src/calcEngine';
 import { FieldMapping } from '@/types';
@@ -33,6 +33,58 @@ export default function FormScreen() {
     workbook && Object.keys(formData).length > 0 ? previewCalculations(workbook, formData) : [],
   [workbook, formData]);
 
+  const handleSelectSheet = useCallback((name: string) => {
+    setSelectedSheet(name);
+    setFormData({});
+    setEditingIndex(null);
+  }, []);
+
+  const handleImport = useCallback(() => {
+    router.push('/import');
+  }, [router]);
+
+  const handleStartNew = useCallback(() => {
+    setEditingIndex(null);
+    const init: Record<string, string | number> = { _sheetName: selectedSheet };
+    sheetMappings.forEach((m) => { init[`${m.sheetName}.${m.column}`] = m.fieldType === 'number' ? 0 : ''; });
+    setFormData(init);
+  }, [selectedSheet, sheetMappings]);
+
+  const handleStartEdit = useCallback((index: number) => {
+    setEditingIndex(index);
+    if (!workbook) return; setFormData({ ...workbook.records[index] });
+  }, [workbook]);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      if (editingIndex !== null) await updateRecord(editingIndex, formData);
+      else await addRecord(formData);
+      setFormData({}); setEditingIndex(null);
+      Alert.alert(t('save'), t('done'));
+    } finally { setSaving(false); }
+  }, [editingIndex, formData, addRecord, updateRecord, t]);
+
+  const handleDelete = useCallback((index: number) => {
+    Alert.alert(t('delete'), t('confirm'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('delete'), style: 'destructive', onPress: () => deleteRecord(index) },
+    ]);
+  }, [t, deleteRecord]);
+
+  const handleToggleCalc = useCallback(() => {
+    setShowCalc((prev) => !prev);
+  }, []);
+
+  const handleOpenModal = useCallback(() => {
+    setShowModal(true);
+  }, []);
+
+  const handleCancelEdit = useCallback(() => {
+    setFormData({});
+    setEditingIndex(null);
+  }, []);
+
   if (!workbook || workbook.sheets.length === 0) {
     return (
       <View style={styles.container}>
@@ -47,37 +99,6 @@ export default function FormScreen() {
     );
   }
 
-  const startNew = () => {
-    setEditingIndex(null);
-    const init: Record<string, string | number> = { _sheetName: selectedSheet };
-    sheetMappings.forEach((m) => { init[`${m.sheetName}.${m.column}`] = m.fieldType === 'number' ? 0 : ''; });
-    setFormData(init);
-  };
-
-  const startEdit = (index: number) => {
-    setEditingIndex(index);
-    setFormData({ ...workbook.records[index] });
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      if (editingIndex !== null) await updateRecord(editingIndex, formData);
-      else await addRecord(formData);
-      setFormData({}); setEditingIndex(null);
-      Alert.alert(t('save'), t('done'));
-    } finally { setSaving(false); }
-  };
-
-  const handleDelete = (index: number) => {
-    Alert.alert(t('delete'), t('confirm'), [
-      { text: t('cancel'), style: 'cancel' },
-      { text: t('delete'), style: 'destructive', onPress: () => deleteRecord(index) },
-    ]);
-  };
-
-  const mappings = sheetMappings.length > 0 ? sheetMappings : workbook.mappings.filter((m) => m.sheetName === selectedSheet);
-
   return (
     <View style={styles.container}>
       <Text style={styles.title}>{t('quickEntry')}</Text>
@@ -85,7 +106,7 @@ export default function FormScreen() {
         <View style={styles.sheetTabs}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {workbook.sheets.map((s) => (
-              <TouchableOpacity key={s.name} style={[styles.sheetTab, selectedSheet === s.name && styles.sheetTabActive]} onPress={() => { setSelectedSheet(s.name); setFormData({}); setEditingIndex(null); }}>
+              <TouchableOpacity key={s.name} style={[styles.sheetTab, selectedSheet === s.name && styles.sheetTabActive]} onPress={() => handleSelectSheet(s.name)}>
                 <Text style={[styles.sheetTabText, selectedSheet === s.name && styles.sheetTabTextActive]}>{s.name}</Text>
               </TouchableOpacity>
             ))}
@@ -95,49 +116,43 @@ export default function FormScreen() {
         {Object.keys(formData).length > 0 && (
           <View style={styles.formSection}>
             <Text style={styles.sectionTitle}>{editingIndex !== null ? t('editRecord') : t('newRecord')}</Text>
-            {mappings.map((m) => {
+            {sheetMappings.map((m) => {
               const key = `${m.sheetName}.${m.column}`;
               return (
-                <FormField key={m.id} mapping={m} value={formData[key] ?? ''} onChangeText={(text) => {
+                <FormField key={m.id} mapping={m} value={formData[key] ?? ''} onChangeText={(text: string) => {
                   const val = m.fieldType === 'number' ? (Number(text) || 0) : text;
-                  setFormData({ ...formData, [key]: val });
+                  setFormData((prev) => ({ ...prev, [key]: val }));
                 }} />
               );
             })}
             {calcResults.length > 0 && (
-              <TouchableOpacity style={styles.calcToggle} onPress={() => setShowCalc(!showCalc)}>
+              <TouchableOpacity style={styles.calcToggle} onPress={handleToggleCalc}>
                 <Calculator size={18} color="#00D9A3" strokeWidth={2} />
                 <Text style={styles.calcToggleText}>{t('calculationPreview')}</Text>
-                {showCalc ? <ChevronUp size={18} color="#666" /> : <ChevronDown size={18} color="#666" />}
               </TouchableOpacity>
             )}
-            {showCalc && calcResults.length > 0 && (
-              <View style={styles.calcContainer}><CalculationPreview results={calcResults} /></View>
-            )}
+            {showCalc && calcResults.length > 0 && <CalculationPreview results={calcResults} />}
             <View style={styles.formActions}>
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-                {saving ? <ActivityIndicator size="small" color="#0A0A0A" /> : <Save size={20} color="#0A0A0A" strokeWidth={2.5} />}
-                <Text style={styles.saveBtnText}>{t('save')}</Text>
+                <Save size={18} color="#0A0A0A" strokeWidth={2.5} />
+                <Text style={styles.saveBtnText}>{saving ? t('saving') : t('save')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => { setFormData({}); setEditingIndex(null); }}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={handleCancelEdit}>
                 <Text style={styles.cancelBtnText}>{t('cancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {Object.keys(formData).length === 0 && (
-          <>
-            <TouchableOpacity style={styles.addBtn} activeOpacity={0.7} onPress={startNew}>
-              <Plus size={22} color="#00D9A3" strokeWidth={2.5} />
-              <Text style={styles.addBtnText}>{t('addRecord')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.customFieldBtn} onPress={() => setShowModal(true)}>
-              <Plus size={18} color="#3B9EFF" strokeWidth={2} />
-              <Text style={styles.customFieldBtnText}>{t('addField')}</Text>
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity style={styles.addBtn} onPress={handleStartNew}>
+          <Plus size={18} color="#00D9A3" strokeWidth={2} />
+          <Text style={styles.addBtnText}>{t('addRecord')}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.customFieldBtn} onPress={handleOpenModal}>
+          <Plus size={18} color="#3B9EFF" strokeWidth={2} />
+          <Text style={styles.customFieldBtnText}>{t('addField')}</Text>
+        </TouchableOpacity>
 
         <View style={styles.recordsSection}>
           <Text style={styles.sectionTitle}>{t('records')} ({sheetRecords.length})</Text>
@@ -146,8 +161,8 @@ export default function FormScreen() {
           ) : (
             sheetRecords.map(({ record, index }) => (
               <View key={index} style={styles.recordCard}>
-                <TouchableOpacity style={styles.recordInfo} onPress={() => startEdit(index)}>
-                  {mappings.slice(0, 3).map((m) => {
+                <TouchableOpacity style={styles.recordInfo} onPress={() => handleStartEdit(index)}>
+                  {sheetMappings.slice(0, 3).map((m) => {
                     const key = `${m.sheetName}.${m.column}`;
                     return (
                       <View key={m.id} style={styles.recordField}>

@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { FileSpreadsheet, Zap, History, Download, Upload, Search, Database, Shield, TrendingUp } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
@@ -23,6 +24,14 @@ export default function HomeScreen() {
     { icon: History, label: t('auditView'), color: '#FF6B6B', route: '/(tabs)/audit' },
     { icon: Download, label: t('exportFile'), color: '#9B59FF', route: '/export' },
   ];
+
+  const handleActionPress = useCallback((route: string) => {
+    router.push(route as any);
+  }, [router]);
+
+  const handleImport = useCallback(() => {
+    router.push('/import');
+  }, [router]);
 
   if (isLoading) {
     return <View style={styles.loading}><ActivityIndicator size="large" color="#00D9A3" /></View>;
@@ -62,7 +71,7 @@ export default function HomeScreen() {
         {actions.map((a) => {
           const Icon = a.icon;
           return (
-            <TouchableOpacity key={a.label} style={styles.actionCard} activeOpacity={0.7} onPress={() => router.push(a.route as any)}>
+            <TouchableOpacity key={a.label} style={styles.actionCard} activeOpacity={0.7} onPress={() => handleActionPress(a.route)}>
               <View style={[styles.actionIcon, { backgroundColor: `${a.color}15` }]}>
                 <Icon size={24} color={a.color} strokeWidth={2} />
               </View>
@@ -77,7 +86,7 @@ export default function HomeScreen() {
           <FileSpreadsheet size={48} color="#333" strokeWidth={1.5} />
           <Text style={styles.emptyTitle}>{t('noWorkbook')}</Text>
           <Text style={styles.emptyHint}>{t('importFirst')}</Text>
-          <TouchableOpacity style={styles.importBtn} activeOpacity={0.7} onPress={() => router.push('/import')}>
+          <TouchableOpacity style={styles.importBtn} activeOpacity={0.7} onPress={handleImport}>
             <Upload size={20} color="#0A0A0A" strokeWidth={2.5} />
             <Text style={styles.importBtnText}>{t('importTemplate')}</Text>
           </TouchableOpacity>

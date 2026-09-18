@@ -1,9 +1,13 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { useCallback } from 'react';
 import { Globe, Shield, Info } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 
 export default function SettingsScreen() {
   const { t, language, setLanguage } = useLanguage();
+
+  const handleSetArabic = useCallback(() => setLanguage('ar'), [setLanguage]);
+  const handleSetEnglish = useCallback(() => setLanguage('en'), [setLanguage]);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -17,10 +21,10 @@ export default function SettingsScreen() {
             <Text style={styles.cardTitle}>{t('language')}</Text>
           </View>
           <View style={styles.langOptions}>
-            <TouchableOpacity style={[styles.langBtn, language === 'ar' && styles.langBtnActive]} onPress={() => setLanguage('ar')}>
+            <TouchableOpacity style={[styles.langBtn, language === 'ar' && styles.langBtnActive]} onPress={handleSetArabic}>
               <Text style={[styles.langBtnText, language === 'ar' && styles.langBtnTextActive]}>{t('arabic')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.langBtn, language === 'en' && styles.langBtnActive]} onPress={() => setLanguage('en')}>
+            <TouchableOpacity style={[styles.langBtn, language === 'en' && styles.langBtnActive]} onPress={handleSetEnglish}>
               <Text style={[styles.langBtnText, language === 'en' && styles.langBtnTextActive]}>{t('english')}</Text>
             </TouchableOpacity>
           </View>

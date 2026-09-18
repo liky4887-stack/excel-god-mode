@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { useCallback } from 'react';
 import { FieldMapping } from '@/types';
 import { useLanguage } from '@/hooks/useLanguage';
 
@@ -8,9 +10,13 @@ interface Props {
   onChangeText: (text: string) => void;
 }
 
-export function FormField({ mapping, value, onChangeText }: Props) {
+function FormField({ mapping, value, onChangeText }: Props) {
   const { t, language } = useLanguage();
   const label = language === 'ar' ? mapping.labelAr : mapping.labelEn;
+
+  const handleOptionPress = useCallback((opt: string) => {
+    onChangeText(opt);
+  }, [onChangeText]);
 
   return (
     <View style={styles.container}>
@@ -21,7 +27,7 @@ export function FormField({ mapping, value, onChangeText }: Props) {
             <Text
               key={opt}
               style={[styles.option, String(value) === opt && styles.optionActive]}
-              onPress={() => onChangeText(opt)}
+              onPress={() => handleOptionPress(opt)}
             >
               {opt}
             </Text>
@@ -44,6 +50,8 @@ export function FormField({ mapping, value, onChangeText }: Props) {
     </View>
   );
 }
+
+export default memo(FormField);
 
 const styles = StyleSheet.create({
   container: { marginBottom: 16 },

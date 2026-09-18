@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { Calculator, CheckCircle2, XCircle } from 'lucide-react-native';
 import { CalculationResult } from '@/types';
@@ -7,17 +8,8 @@ interface Props {
   results: CalculationResult[];
 }
 
-export function CalculationPreview({ results }: Props) {
+function CalculationPreview({ results }: Props) {
   const { t } = useLanguage();
-
-  if (results.length === 0) {
-    return (
-      <View style={styles.empty}>
-        <Calculator size={32} color="#444" strokeWidth={1.5} />
-        <Text style={styles.emptyText}>{t('noFormulas')}</Text>
-      </View>
-    );
-  }
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -37,6 +29,8 @@ export function CalculationPreview({ results }: Props) {
     </ScrollView>
   );
 }
+
+export default memo(CalculationPreview);
 
 const styles = StyleSheet.create({
   container: { maxHeight: 300 },

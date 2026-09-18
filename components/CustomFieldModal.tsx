@@ -1,5 +1,6 @@
+import { memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, TextInput, Alert } from 'react-native';
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { X, Plus } from 'lucide-react-native';
 import { SheetTab, FieldMapping, FieldType } from '@/types';
 import { useLanguage } from '@/hooks/useLanguage';
@@ -19,11 +20,13 @@ export function CustomFieldModal({ visible, sheets, onClose, onCreate }: Props) 
   const { t } = useLanguage();
   const [label, setLabel] = useState('');
   const [fieldType, setFieldType] = useState<FieldType>('text');
-  const [sheetName, setSheetName] = useState(sheets[0]?.name || '');
+  const [sheetName, setSheetNameState] = useState(sheets[0]?.name || '');
   const [column, setColumn] = useState('');
   const [options, setOptions] = useState('');
 
-  const handleCreate = () => {
+  const types = useMemo<FieldType[]>(() => ['text', 'number', 'date', 'select'], []);
+
+  const handleCreate = useCallback(() => {
     if (!label.trim() || !sheetName || !column.trim()) {
       Alert.alert(t('createField'), t('fieldLabel'));
       return;
@@ -42,9 +45,15 @@ export function CustomFieldModal({ visible, sheets, onClose, onCreate }: Props) 
     });
     setLabel(''); setColumn(''); setOptions(''); setFieldType('text');
     onClose();
-  };
+  }, [label, sheetName, column, fieldType, options, onCreate, t]);
 
-  const types: FieldType[] = ['text', 'number', 'date', 'select'];
+  const handleSetFieldType = useCallback((ft: FieldType) => {
+    setFieldType(ft);
+  }, []);
+
+  const handleSetSheetName = useCallback((name: string) => {
+    setSheetNameState(name);
+  }, []);
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -60,7 +69,7 @@ export function CustomFieldModal({ visible, sheets, onClose, onCreate }: Props) 
             <Text style={styles.label}>{t('fieldType')}</Text>
             <View style={styles.chipRow}>
               {types.map((ft) => (
-                <TouchableOpacity key={ft} style={[styles.chip, fieldType === ft && styles.chipActive]} onPress={() => setFieldType(ft)}>
+                <TouchableOpacity key={ft} style={[styles.chip, fieldType === ft && styles.chipActive]} onPress={() => handleSetFieldType(ft)}>
                   <Text style={[styles.chipText, fieldType === ft && styles.chipTextActive]}>{t(ft)}</Text>
                 </TouchableOpacity>
               ))}
@@ -68,7 +77,7 @@ export function CustomFieldModal({ visible, sheets, onClose, onCreate }: Props) 
             <Text style={styles.label}>{t('targetSheet')}</Text>
             <View style={styles.chipRow}>
               {sheets.map((s) => (
-                <TouchableOpacity key={s.name} style={[styles.chip, sheetName === s.name && styles.chipActive]} onPress={() => setSheetName(s.name)}>
+                <TouchableOpacity key={s.name} style={[styles.chip, sheetName === s.name && styles.chipActive]} onPress={() => handleSetSheetName(s.name)}>
                   <Text style={[styles.chipText, sheetName === s.name && styles.chipTextActive]}>{s.name}</Text>
                 </TouchableOpacity>
               ))}

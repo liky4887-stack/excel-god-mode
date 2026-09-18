@@ -1,0 +1,27 @@
+{
+  "extends": ["eslint:recommended"],
+  "env": {
+    "browser": true,
+    "es6": true,
+    "amd": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "plugins": ["react", "react-native"],
+  "rules": {
+    "react/jsx-no-bind": "warn",
+    "react/jsx-key": "error",
+    "react-native/no-inline-styles": "error",
+    "no-unused-vars": "warn",
+    "no-console": "warn",
+    "eqeqeq": ["error", "always"],
+    "no-eval": "error",
+    "no-new-func": "error",
+    "react/display-name": "off"
+  }
+}

@@ -1,9 +1,9 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Save, RotateCcw } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
-import { VersionCard } from '@/components/VersionCard';
+import VersionCard from '@/components/VersionCard';
 
 export default function AuditScreen() {
   const { t } = useLanguage();
@@ -13,14 +13,14 @@ export default function AuditScreen() {
   const [saving, setSaving] = useState(false);
   const [rollingBack, setRollingBack] = useState<string | null>(null);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!label.trim()) return;
     setSaving(true);
     try { await createSaveVersion(label.trim()); setLabel(''); setShowSave(false); }
     finally { setSaving(false); }
-  };
+  }, [label, createSaveVersion]);
 
-  const handleRollback = (id: string) => {
+  const handleRollback = useCallback((id: string) => {
     Alert.alert(t('rollback'), t('rollbackConfirm'), [
       { text: t('cancel'), style: 'cancel' },
       { text: t('confirm'), style: 'destructive', onPress: async () => {
@@ -30,14 +30,23 @@ export default function AuditScreen() {
         if (ok) Alert.alert(t('rollbackSuccess'), '');
       }},
     ]);
-  };
+  }, [t, doRollback]);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     Alert.alert(t('delete'), t('confirm'), [
       { text: t('cancel'), style: 'cancel' },
       { text: t('delete'), style: 'destructive', onPress: () => doDeleteVersion(id) },
     ]);
-  };
+  }, [t, doDeleteVersion]);
+
+  const handleToggleSave = useCallback(() => {
+    setShowSave((prev) => !prev);
+  }, []);
+
+  const handleCancelSave = useCallback(() => {
+    setShowSave(false);
+    setLabel('');
+  }, []);
 
   if (!workbook || workbook.sheets.length === 0) {
     return (
@@ -58,12 +67,12 @@ export default function AuditScreen() {
             <TouchableOpacity style={styles.saveConfirmBtn} onPress={handleSave} disabled={saving}>
               {saving ? <ActivityIndicator size="small" color="#0A0A0A" /> : <Save size={18} color="#0A0A0A" strokeWidth={2.5} />}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelSmallBtn} onPress={() => { setShowSave(false); setLabel(''); }}>
+            <TouchableOpacity style={styles.cancelSmallBtn} onPress={handleCancelSave}>
               <Text style={styles.cancelSmallText}>{t('cancel')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity style={styles.saveVersionBtn} onPress={() => setShowSave(true)}>
+          <TouchableOpacity style={styles.saveVersionBtn} onPress={handleToggleSave}>
             <Save size={18} color="#00D9A3" strokeWidth={2.5} />
             <Text style={styles.saveVersionText}>{t('saveVersion')}</Text>
           </TouchableOpacity>
