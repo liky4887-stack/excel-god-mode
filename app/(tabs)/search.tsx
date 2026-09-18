@@ -9,8 +9,10 @@ import { searchInWorkbook } from '@/src/excelBridge';
 
 function SearchScreen() {
   const { t } = useLanguage();
-  const { workbook } = useExcel();
+  const { activeTemplate } = useExcel();
   const [query, setQuery] = useState('');
+
+  const workbook = activeTemplate?.workbook;
 
   const results = useMemo(() => workbook ? searchInWorkbook(workbook, query) : [], [workbook, query]);
 

@@ -7,7 +7,7 @@ import VersionCard from '@/components/VersionCard';
 
 export default function AuditScreen() {
   const { t } = useLanguage();
-  const { workbook, versions, createSaveVersion, doRollback, doDeleteVersion } = useExcel();
+  const { activeTemplate, activeTemplateId, createVersion, doRollback, doDeleteVersion } = useExcel();
   const [showSave, setShowSave] = useState(false);
   const [label, setLabel] = useState('');
   const [saving, setSaving] = useState(false);
@@ -16,9 +16,9 @@ export default function AuditScreen() {
   const handleSave = useCallback(async () => {
     if (!label.trim()) return;
     setSaving(true);
-    try { await createSaveVersion(label.trim()); setLabel(''); setShowSave(false); }
+    try { await createVersion(label.trim()); setLabel(''); setShowSave(false); }
     finally { setSaving(false); }
-  }, [label, createSaveVersion]);
+  }, [label, createVersion]);
 
   const handleRollback = useCallback((id: string) => {
     Alert.alert(t('rollback'), t('rollbackConfirm'), [
@@ -47,6 +47,9 @@ export default function AuditScreen() {
     setShowSave(false);
     setLabel('');
   }, []);
+
+  const workbook = activeTemplate?.workbook;
+  const versions = activeTemplate?.versions || [];
 
   if (!workbook || workbook.sheets.length === 0) {
     return (

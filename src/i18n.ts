@@ -17,6 +17,7 @@ export type TKey =
   | 'foundIn' | 'sheet' | 'row' | 'column' | 'value' | 'done' | 'loading'
   | 'saving' | 'exporting' | 'importing' | 'offlineMode' | 'noNetwork'
   | 'yourData' | 'quickActions' | 'welcome' | 'startWorking' | 'summary'
+  | 'templates' | 'importNewTemplate' | 'active' | 'createNewColumn'
   | 'pdfSummaryTitle' | 'generatedOn' | 'totalEntries' | 'sheetBreakdown'
   | 'fileName' | 'rows' | 'columns' | 'close';
 
@@ -101,6 +102,10 @@ const en: Record<TKey, string> = {
   offlineMode: '100% Offline Mode',
   noNetwork: 'No network required',
   yourData: 'Your data stays on device',
+  templates: 'Templates',
+  importNewTemplate: 'Import New Template',
+  active: 'Active',
+  createNewColumn: 'Create new column',
   quickActions: 'Quick Actions',
   welcome: 'Welcome',
   startWorking: 'Start working with your Excel data',
@@ -196,6 +201,10 @@ const ar: Record<TKey, string> = {
   offlineMode: 'وضع بدون إنترنت 100%',
   noNetwork: 'لا حاجة للشبكة',
   yourData: 'بياناتك تبقى على جهازك',
+  templates: 'القوالب',
+  importNewTemplate: 'استيراد قالب جديد',
+  active: 'نشط',
+  createNewColumn: 'إنشاء عمود جديد',
   quickActions: 'إجراءات سريعة',
   welcome: 'مرحباً',
   startWorking: 'ابدأ العمل مع بيانات إكسل',

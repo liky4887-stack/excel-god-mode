@@ -1,37 +1,32 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
-import { useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, FlatList } from 'react-native';
+import { useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { FileSpreadsheet, Zap, History, Download, Upload, Search, Database, Shield, TrendingUp } from 'lucide-react-native';
+import { FileSpreadsheet, Zap, History, Download, Upload, Search, Database, Shield, TrendingUp, Plus } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
+import { TemplateMeta } from '@/types';
 
 export default function HomeScreen() {
   const { t } = useLanguage();
-  const { workbook, isLoading } = useExcel();
+  const { templates, activeTemplateId, activeTemplate, isLoading, switchTemplate, importTemplate } = useExcel();
   const router = useRouter();
-  const hasWb = workbook && workbook.sheets.length > 0;
 
-  const stats = hasWb ? [
-    { label: t('totalRecords'), value: workbook.records.length, icon: Database, color: '#00D9A3' },
-    { label: t('totalSheets'), value: workbook.sheets.length, icon: FileSpreadsheet, color: '#3B9EFF' },
-    { label: t('totalFields'), value: workbook.mappings.length, icon: TrendingUp, color: '#FFB444' },
-  ] : [];
-
-  const actions = [
-    { icon: Upload, label: t('importTemplate'), color: '#3B9EFF', route: '/import' },
-    { icon: Zap, label: t('quickEntry'), color: '#00D9A3', route: '/(tabs)/form' },
-    { icon: Search, label: t('search'), color: '#FFB444', route: '/(tabs)/search' },
-    { icon: History, label: t('auditView'), color: '#FF6B6B', route: '/(tabs)/audit' },
-    { icon: Download, label: t('exportFile'), color: '#9B59FF', route: '/export' },
-  ];
-
-  const handleActionPress = useCallback((route: string) => {
-    router.push(route as any);
-  }, [router]);
-
-  const handleImport = useCallback(() => {
+  const handlePickAndImport = useCallback(async () => {
     router.push('/import');
   }, [router]);
+
+  const handleTemplatePress = useCallback((id: string) => {
+    switchTemplate(id);
+  }, [switchTemplate]);
+
+  const activeMeta = templates.find((t) => t.id === activeTemplateId) || null;
+  const hasActive = activeTemplate !== null && activeTemplate.workbook && activeTemplate.workbook.sheets.length > 0;
+
+  const stats = hasActive ? [
+    { label: t('totalRecords'), value: activeTemplate.records.length, icon: Database, color: '#00D9A3' },
+    { label: t('totalSheets'), value: activeTemplate.workbook.sheets.length, icon: FileSpreadsheet, color: '#3B9EFF' },
+    { label: t('totalFields'), value: activeTemplate.mappings.length, icon: TrendingUp, color: '#FFB444' },
+  ] : [];
 
   if (isLoading) {
     return <View style={styles.loading}><ActivityIndicator size="large" color="#00D9A3" /></View>;
@@ -51,7 +46,34 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {hasWb && (
+      <Text style={styles.sectionTitle}>Templates</Text>
+      <FlatList
+        horizontal
+        data={templates}
+        keyExtractor={(item) => item.id}
+        showsHorizontalScrollIndicator={false}
+        renderItem={({ item }: { item: TemplateMeta }) => (
+          <TouchableOpacity
+            style={[styles.templateCard, item.id === activeTemplateId && styles.templateCardActive]}
+            onPress={() => handleTemplatePress(item.id)}
+          >
+            <View style={styles.templateIconWrap}>
+              <FileSpreadsheet size={20} color={item.id === activeTemplateId ? '#00D9A3' : '#666'} strokeWidth={2} />
+            </View>
+            <Text style={[styles.templateName, item.id === activeTemplateId && styles.templateNameActive]} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.templateMeta}>{item.recordCount} records · {item.sheetCount} sheets</Text>
+            {item.id === activeTemplateId && <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Active</Text></View>}
+          </TouchableOpacity>
+        )}
+      />
+      <TouchableOpacity style={styles.importNewBtn} onPress={handlePickAndImport}>
+        <Plus size={18} color="#3B9EFF" strokeWidth={2} />
+        <Text style={styles.importNewBtnText}>Import New Template</Text>
+      </TouchableOpacity>
+
+      {hasActive && (
         <View style={styles.statsRow}>
           {stats.map((s) => {
             const Icon = s.icon;
@@ -66,12 +88,18 @@ export default function HomeScreen() {
         </View>
       )}
 
-      <Text style={styles.sectionTitle}>{t('quickActions')}</Text>
+      <Text style={styles.sectionTitle}>Quick Actions</Text>
       <View style={styles.actionsGrid}>
-        {actions.map((a) => {
+        {[
+          { icon: Upload, label: 'Import Template', color: '#3B9EFF', route: '/import' as const },
+          { icon: Zap, label: 'Quick Entry', color: '#00D9A3', route: '/(tabs)/form' as const },
+          { icon: Search, label: 'Search', color: '#FFB444', route: '/(tabs)/search' as const },
+          { icon: History, label: 'Audit View', color: '#FF6B6B', route: '/(tabs)/audit' as const },
+          { icon: Download, label: 'Export File', color: '#9B59FF', route: '/export' as const },
+        ].map((a) => {
           const Icon = a.icon;
           return (
-            <TouchableOpacity key={a.label} style={styles.actionCard} activeOpacity={0.7} onPress={() => handleActionPress(a.route)}>
+            <TouchableOpacity key={a.label} style={styles.actionCard} activeOpacity={0.7} onPress={() => router.push(a.route)}>
               <View style={[styles.actionIcon, { backgroundColor: `${a.color}15` }]}>
                 <Icon size={24} color={a.color} strokeWidth={2} />
               </View>
@@ -81,19 +109,19 @@ export default function HomeScreen() {
         })}
       </View>
 
-      {!hasWb && (
+      {!hasActive && (
         <View style={styles.emptyState}>
           <FileSpreadsheet size={48} color="#333" strokeWidth={1.5} />
-          <Text style={styles.emptyTitle}>{t('noWorkbook')}</Text>
-          <Text style={styles.emptyHint}>{t('importFirst')}</Text>
-          <TouchableOpacity style={styles.importBtn} activeOpacity={0.7} onPress={handleImport}>
+          <Text style={styles.emptyTitle}>No template selected</Text>
+          <Text style={styles.emptyHint}>Import or select a template from above</Text>
+          <TouchableOpacity style={styles.importBtn} activeOpacity={0.7} onPress={handlePickAndImport}>
             <Upload size={20} color="#0A0A0A" strokeWidth={2.5} />
-            <Text style={styles.importBtnText}>{t('importTemplate')}</Text>
+            <Text style={styles.importBtnText}>Import Template</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      <View style={styles.footer}><Text style={styles.footerText}>{t('yourData')}</Text></View>
+      <View style={styles.footer}><Text style={styles.footerText}>Your data stays on device</Text></View>
     </ScrollView>
   );
 }
@@ -107,11 +135,21 @@ const styles = StyleSheet.create({
   tagline: { fontSize: 14, color: '#666', marginBottom: 12 },
   offlineBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: 'rgba(0,217,163,0.12)', borderWidth: 1, borderColor: 'rgba(0,217,163,0.25)' },
   offlineText: { fontSize: 12, fontWeight: '600', color: '#00D9A3' },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#E8E8E8', marginBottom: 14 },
+  templateCard: { width: 180, backgroundColor: '#121212', borderWidth: 1, borderColor: '#1E1E1E', borderRadius: 14, padding: 14, marginRight: 12, alignItems: 'center', gap: 6 },
+  templateCardActive: { borderColor: '#00D9A3', backgroundColor: 'rgba(0,217,163,0.06)' },
+  templateIconWrap: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(59,158,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  templateName: { fontSize: 14, fontWeight: '600', color: '#CCC', textAlign: 'center' },
+  templateNameActive: { color: '#00D9A3' },
+  templateMeta: { fontSize: 11, color: '#666', textAlign: 'center' },
+  activeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(0,217,163,0.15)', marginTop: 4 },
+  activeBadgeText: { fontSize: 10, fontWeight: '700', color: '#00D9A3' },
+  importNewBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(59,158,255,0.3)', backgroundColor: 'rgba(59,158,255,0.06)', marginBottom: 20 },
+  importNewBtnText: { fontSize: 14, fontWeight: '600', color: '#3B9EFF' },
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 28 },
   statCard: { flex: 1, backgroundColor: '#121212', borderWidth: 1, borderColor: '#1E1E1E', borderRadius: 14, padding: 14, alignItems: 'center', gap: 4 },
   statValue: { fontSize: 24, fontWeight: '800', color: '#FFF' },
   statLabel: { fontSize: 11, color: '#666', textAlign: 'center' },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#E8E8E8', marginBottom: 14 },
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   actionCard: { width: '47%', flexGrow: 0, backgroundColor: '#121212', borderWidth: 1, borderColor: '#1E1E1E', borderRadius: 14, padding: 18, alignItems: 'center', gap: 12 },
   actionIcon: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },

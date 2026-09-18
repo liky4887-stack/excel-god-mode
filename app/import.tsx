@@ -6,12 +6,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Upload, FileSpreadsheet, CheckCircle2, ArrowLeft } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
-import { readWorkbook, bufferToBase64 } from '@/src/excelBridge';
+import { readWorkbook, bufferToBase64, pickAndParseWorkbook } from '@/src/excelBridge';
 
 export default function ImportScreen() {
   const { t } = useLanguage();
   const router = useRouter();
-  const { setWorkbookData } = useExcel();
+  const { importTemplate } = useExcel();
   const [importing, setImporting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,10 +36,7 @@ export default function ImportScreen() {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const arrayBuffer = bytes.buffer as ArrayBuffer;
 
-      const wb = readWorkbook(arrayBuffer, file.name);
-      const base64 = bufferToBase64(arrayBuffer);
-      await setWorkbookData(wb, base64);
-
+      await importTemplate(file.uri, file.name);
       setSuccess(true);
       setTimeout(() => router.replace('/(tabs)'), 1500);
     } catch (e) {
@@ -47,7 +44,7 @@ export default function ImportScreen() {
     } finally {
       setImporting(false);
     }
-  }, [setWorkbookData, t, router]);
+  }, [importTemplate, router, t]);
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>

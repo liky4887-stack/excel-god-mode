@@ -58,3 +58,30 @@ export interface SearchResult {
   header: string;
   value: string;
 }
+
+// ===== Multi-Template Types =====
+
+export interface TemplateMeta {
+  id: string;
+  name: string;
+  fileName: string;
+  originalFileUri: string;
+  importedAt: number;
+  sheetCount: number;
+  columnCount: number;
+  recordCount: number;
+  lastEditedAt: number;
+}
+
+export interface TemplateData {
+  workbook: WorkbookData;
+  mappings: FieldMapping[];
+  records: Record<string, string | number>[];
+  customFields: FieldMapping[];
+  versions: SaveVersion[];
+}
+
+export interface TemplateSnapshot {
+  meta: TemplateMeta;
+  data: TemplateData;
+}

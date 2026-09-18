@@ -13,21 +13,28 @@ import { FieldMapping } from '@/types';
 export default function FormScreen() {
   const { t } = useLanguage();
   const router = useRouter();
-  const { workbook, addRecord, updateRecord, deleteRecord, addCustomField } = useExcel();
-  const [selectedSheet, setSelectedSheet] = useState(workbook?.sheets[0]?.name || '');
+  const { activeTemplate, addRecord, updateRecord, deleteRecord, addCustomField } = useExcel();
+  const [selectedSheet, setSelectedSheet] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [formData, setFormData] = useState<Record<string, string | number>>({});
   const [showCalc, setShowCalc] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [showSaveToast, setShowSaveToast] = useState(false);
+
+  const workbook = activeTemplate?.workbook;
+  const mappings = activeTemplate?.mappings || [];
+  const records = activeTemplate?.records || [];
+  const customFields = activeTemplate?.customFields || [];
 
   const sheetMappings = useMemo(() =>
-    workbook ? workbook.mappings.filter((m) => m.sheetName === selectedSheet) : [],
-  [workbook, selectedSheet]);
+    mappings.filter((m) => m.sheetName === selectedSheet),
+  [mappings, selectedSheet]);
 
   const sheetRecords = useMemo(() =>
-    workbook ? workbook.records.map((r, i) => ({ record: r, index: i })).filter(({ record }) => record._sheetName === selectedSheet) : [],
-  [workbook, selectedSheet]);
+    records.map((r, i) => ({ record: r, index: i })).filter(({ record }: { record: Record<string, string | number>, index: number }) => record._sheetName === selectedSheet),
+  [records, selectedSheet]);
 
   const calcResults = useMemo(() =>
     workbook && Object.keys(formData).length > 0 ? previewCalculations(workbook, formData) : [],
@@ -45,6 +52,7 @@ export default function FormScreen() {
 
   const handleStartNew = useCallback(() => {
     setEditingIndex(null);
+    setIsAdding(true);
     const init: Record<string, string | number> = { _sheetName: selectedSheet };
     sheetMappings.forEach((m) => { init[`${m.sheetName}.${m.column}`] = m.fieldType === 'number' ? 0 : ''; });
     setFormData(init);
@@ -52,15 +60,21 @@ export default function FormScreen() {
 
   const handleStartEdit = useCallback((index: number) => {
     setEditingIndex(index);
-    if (!workbook) return; setFormData({ ...workbook.records[index] });
-  }, [workbook]);
+    setIsAdding(false);
+    setFormData({ ...records[index] });
+  }, [records]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      if (editingIndex !== null) await updateRecord(editingIndex, formData);
-      else await addRecord(formData);
-      setFormData({}); setEditingIndex(null);
+      if (editingIndex !== null) {
+        await updateRecord(editingIndex, formData);
+      } else {
+        await addRecord(formData);
+      }
+      setFormData({}); setEditingIndex(null); setIsAdding(false);
+      setShowSaveToast(true);
+      setTimeout(() => setShowSaveToast(false), 1500);
       Alert.alert(t('save'), t('done'));
     } finally { setSaving(false); }
   }, [editingIndex, formData, addRecord, updateRecord, t]);
@@ -83,6 +97,7 @@ export default function FormScreen() {
   const handleCancelEdit = useCallback(() => {
     setFormData({});
     setEditingIndex(null);
+    setIsAdding(false);
   }, []);
 
   if (!workbook || workbook.sheets.length === 0) {
@@ -91,7 +106,7 @@ export default function FormScreen() {
         <Text style={styles.title}>{t('quickEntry')}</Text>
         <View style={styles.empty}>
           <Text style={styles.emptyText}>{t('noWorkbook')}</Text>
-          <TouchableOpacity style={styles.importBtn} onPress={() => router.push('/import')}>
+          <TouchableOpacity style={styles.importBtn} onPress={handleImport}>
             <Text style={styles.importBtnText}>{t('importTemplate')}</Text>
           </TouchableOpacity>
         </View>
@@ -113,9 +128,9 @@ export default function FormScreen() {
           </ScrollView>
         </View>
 
-        {Object.keys(formData).length > 0 && (
+        {isAdding && (
           <View style={styles.formSection}>
-            <Text style={styles.sectionTitle}>{editingIndex !== null ? t('editRecord') : t('newRecord')}</Text>
+            <Text style={styles.sectionTitle}>{t('newRecord')}</Text>
             {sheetMappings.map((m) => {
               const key = `${m.sheetName}.${m.column}`;
               return (
@@ -144,15 +159,19 @@ export default function FormScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={styles.addBtn} onPress={handleStartNew}>
-          <Plus size={18} color="#00D9A3" strokeWidth={2} />
-          <Text style={styles.addBtnText}>{t('addRecord')}</Text>
-        </TouchableOpacity>
+        {!isAdding && (
+          <>
+            <TouchableOpacity style={styles.addBtn} onPress={handleStartNew}>
+              <Plus size={18} color="#00D9A3" strokeWidth={2} />
+              <Text style={styles.addBtnText}>{t('addRecord')}</Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity style={styles.customFieldBtn} onPress={handleOpenModal}>
-          <Plus size={18} color="#3B9EFF" strokeWidth={2} />
-          <Text style={styles.customFieldBtnText}>{t('addField')}</Text>
-        </TouchableOpacity>
+            <TouchableOpacity style={styles.customFieldBtn} onPress={handleOpenModal}>
+              <Plus size={18} color="#3B9EFF" strokeWidth={2} />
+              <Text style={styles.customFieldBtnText}>{t('addField')}</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
         <View style={styles.recordsSection}>
           <Text style={styles.sectionTitle}>{t('records')} ({sheetRecords.length})</Text>
@@ -180,7 +199,12 @@ export default function FormScreen() {
           )}
         </View>
       </ScrollView>
-      <CustomFieldModal visible={showModal} sheets={workbook.sheets} onClose={() => setShowModal(false)} onCreate={(f: FieldMapping) => addCustomField(f)} />
+      {showSaveToast && (
+        <View style={styles.saveToast}>
+          <Text style={styles.saveToastText}>{t('done')}</Text>
+        </View>
+      )}
+      <CustomFieldModal visible={showModal} sheets={workbook.sheets} mappings={mappings} onClose={() => setShowModal(false)} onCreate={(f: FieldMapping) => addCustomField(f)} />
     </View>
   );
 }
@@ -220,4 +244,6 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 18, color: '#666' },
   importBtn: { backgroundColor: '#00D9A3', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 14 },
   importBtnText: { fontSize: 16, fontWeight: '700', color: '#0A0A0A' },
+  saveToast: { position: 'absolute', bottom: 40, alignSelf: 'center', backgroundColor: '#00D9A3', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, zIndex: 100 },
+  saveToastText: { fontSize: 16, fontWeight: '700', color: '#0A0A0A' },
 });

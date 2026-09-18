@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import * as DocumentPicker from 'expo-document-picker';
 import { FieldMapping, SheetTab, WorkbookData, SearchResult } from '@/types';
 
 function uid(): string {
@@ -71,6 +72,25 @@ export function readWorkbook(arrayBuffer: ArrayBuffer, fileName: string): Workbo
   });
 
   return { id: uid(), fileName, sheets, mappings, records, originalBase64: '', createdAt: Date.now(), updatedAt: Date.now() };
+}
+
+export async function pickAndParseWorkbook(): Promise<{ arrayBuffer: ArrayBuffer; fileName: string } | null> {
+  try {
+    const fs = await import('expo-file-system/legacy');
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel', 'application/octet-stream'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.length) return null;
+    const file = result.assets[0];
+    const fileContent = await fs.readAsStringAsync(file.uri, { encoding: fs.EncodingType.Base64 });
+    const binary = atob(fileContent);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return { arrayBuffer: bytes.buffer as ArrayBuffer, fileName: file.name };
+  } catch {
+    return null;
+  }
 }
 
 function detectType(data: Record<string, string | number>[], header: string): FieldMapping['fieldType'] {
