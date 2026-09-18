@@ -21,7 +21,7 @@ export type TKey =
   | 'fileName' | 'rows' | 'columns' | 'close';
 
 const en: Record<TKey, string> = {
-  appName: 'Excel God Mode',
+  appName: 'Excel Mode',
   tagline: 'Offline Excel Engine for Oil Field Accounting',
   commandCenter: 'Command Center',
   quickEntry: 'Quick Entry',
@@ -116,7 +116,7 @@ const en: Record<TKey, string> = {
 };
 
 const ar: Record<TKey, string> = {
-  appName: 'إكسل الله',
+  appName: 'إكسل مود',
   tagline: 'محرك إكسل بدون إنترنت لحسابات حقول النفط',
   commandCenter: 'مركز القيادة',
   quickEntry: 'إدخال سريع',
