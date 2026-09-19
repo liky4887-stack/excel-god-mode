@@ -128,7 +128,7 @@ export default function FormScreen() {
           </ScrollView>
         </View>
 
-        {isAdding && (
+        {(isAdding || editingIndex !== null) && (
           <View style={styles.formSection}>
             <Text style={styles.sectionTitle}>{t('newRecord')}</Text>
             {sheetMappings.map((m) => {
@@ -181,7 +181,7 @@ export default function FormScreen() {
             sheetRecords.map(({ record, index }) => (
               <View key={index} style={styles.recordCard}>
                 <TouchableOpacity style={styles.recordInfo} onPress={() => handleStartEdit(index)}>
-                  {sheetMappings.slice(0, 3).map((m) => {
+                  {sheetMappings.map((m) => {
                     const key = `${m.sheetName}.${m.column}`;
                     return (
                       <View key={m.id} style={styles.recordField}>
