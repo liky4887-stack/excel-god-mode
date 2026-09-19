@@ -1,21 +1,48 @@
 {
   "expo": {
     "name": "Excel Mode",
-    "slug": "excel-mode",
+    "slug": "excel-mode-manni-2026",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "excelgodmode",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.excelgodmode.app"
     },
     "android": {
       "package": "com.excelgodmode.app"
     },
-    "plugins": ["expo-router", "expo-font", "expo-web-browser"],
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-navy.png",
+          "imageWidth": 200,
+          "resizeMode": "cover",
+          "backgroundColor": "#0A2540",
+          "dark": {
+            "image": "./assets/splash-navy.png",
+            "imageWidth": 200,
+            "resizeMode": "cover",
+            "backgroundColor": "#0A2540"
+          }
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
+    },
+    "owner": "manni.p",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5de33779-a55b-48bc-a78e-3eb43b9e47bc"
+      }
     }
   }
 }
