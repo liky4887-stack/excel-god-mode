@@ -16,6 +16,22 @@ function colLetter(col: number): string {
   return r;
 }
 
+function isMeaningfulHeader(header: string, colIdx: number): boolean {
+  // A header is meaningful if it is NOT just the letter fallback for its column
+  const letters = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+  const base = letters[colIdx % 26];
+  return header !== base;
+}
+
+function columnHasData(ws: XLSX.WorkSheet, colIdx: number, headerRow: number, range: XLSX.Range): boolean {
+  for (let r = headerRow + 1; r <= range.e.r; r++) {
+    const addr = XLSX.utils.encode_cell({ r, c: colIdx });
+    const cell = ws[addr];
+    if (cell && cell.v != null && String(cell.v).trim() !== '') return true;
+  }
+  return false;
+}
+
 function detectHeaderRow(ws: XLSX.WorkSheet, range: XLSX.Range): number {
   const maxScan = Math.min(range.e.r - range.s.r, 12);
   let bestRow = range.s.r;
@@ -55,7 +71,24 @@ export function readWorkbook(arrayBuffer: ArrayBuffer, fileName: string): Workbo
       const v = cell && cell.v != null && String(cell.v).trim() ? String(cell.v).trim() : colLetter(c);
       headers.push(v);
     }
-    return { name, rowCount: range.e.r - range.s.r + 1, colCount: range.e.c - range.s.c + 1, headers, headerRow };
+    // Keep only columns that have a real header AND at least one data cell
+    const keptIndexes: number[] = [];
+    const keptHeaders: string[] = [];
+    for (let i = 0; i < headers.length; i++) {
+      const colIdx = range.s.c + i;
+      if (isMeaningfulHeader(headers[i], colIdx) && columnHasData(ws, colIdx, headerRow, range)) {
+        keptIndexes.push(colIdx);
+        keptHeaders.push(headers[i]);
+      }
+    }
+    return {
+      name,
+      rowCount: range.e.r - range.s.r + 1,
+      colCount: keptHeaders.length,
+      headers: keptHeaders,
+      headerRow,
+      keptColumnIndexes: keptIndexes,
+    };
   });
 
   const mappings: FieldMapping[] = [];
@@ -64,31 +97,54 @@ export function readWorkbook(arrayBuffer: ArrayBuffer, fileName: string): Workbo
   sheets.forEach((sheet) => {
     const ws = wb.Sheets[sheet.name];
     if (!ws) return;
-    const jsonData = XLSX.utils.sheet_to_json<Record<string, string | number>>(ws, { defval: '', range: sheet.headerRow });
+    const ref = ws['!ref'] || 'A1';
+    const range = XLSX.utils.decode_range(ref);
+    const keptIdx = sheet.keptColumnIndexes || [];
 
-    if (jsonData.length > 0) {
-      sheet.headers.forEach((header, colIdx) => {
-        if (!header) return;
+    if (keptIdx.length === 0) return;
+
+    // Read rows manually using only kept columns
+    const rowsData: Record<string, string | number>[] = [];
+    for (let r = sheet.headerRow + 1; r <= range.e.r; r++) {
+      const row: Record<string, string | number> = {};
+      let hasAny = false;
+      keptIdx.forEach((colIdx) => {
         const cl = colLetter(colIdx);
-        const hasFormula = checkFormulas(ws, colIdx, jsonData.length);
+        const key = sheet.headers[keptIdx.indexOf(colIdx)];
+        const addr = XLSX.utils.encode_cell({ r, c: colIdx });
+        const cell = ws[addr];
+        const v = cell && cell.v != null ? cell.v : '';
+        row[key] = v as string | number;
+        if (v !== '' && v != null) hasAny = true;
+      });
+      if (hasAny) rowsData.push(row);
+    }
+
+    if (rowsData.length > 0) {
+      // Build mappings from kept headers only
+      sheet.headers.forEach((header, hIdx) => {
+        const colIdx = keptIdx[hIdx];
+        const cl = colLetter(colIdx);
+        const hasFormula = checkFormulas(ws, colIdx, rowsData.length);
         mappings.push({
           id: uid(),
           labelEn: header,
           labelAr: header,
           sheetName: sheet.name,
           column: cl,
-          fieldType: detectType(jsonData, header),
+          fieldType: detectType(rowsData, header),
           isFormula: hasFormula,
-          formulaTemplate: hasFormula ? getFormula(ws, colIdx, jsonData.length) : undefined,
+          formulaTemplate: hasFormula ? getFormula(ws, colIdx, rowsData.length) : undefined,
         });
       });
 
-      jsonData.forEach((row, rowIdx) => {
+      // Build records using the same headers as keys
+      rowsData.forEach((row, rowIdx) => {
         const rec: Record<string, string | number> = {};
-        sheet.headers.forEach((_, colIdx) => {
+        keptIdx.forEach((colIdx, hIdx) => {
           const cl = colLetter(colIdx);
           const key = `${sheet.name}.${cl}`;
-          rec[key] = row[sheet.headers[colIdx]] ?? '';
+          rec[key] = row[sheet.headers[hIdx]] ?? '';
         });
         rec._sheetName = sheet.name;
         rec._rowIndex = rowIdx + 2;
