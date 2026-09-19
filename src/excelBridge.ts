@@ -16,6 +16,30 @@ function colLetter(col: number): string {
   return r;
 }
 
+function detectHeaderRow(ws: XLSX.WorkSheet, range: XLSX.Range): number {
+  const maxScan = Math.min(range.e.r - range.s.r, 12);
+  let bestRow = range.s.r;
+  let bestScore = -1;
+  for (let i = 0; i <= maxScan; i++) {
+    const r = range.s.r + i;
+    let stringCells = 0;
+    let numericCells = 0;
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = ws[addr];
+      if (!cell || cell.v == null || cell.v === '') continue;
+      const v = cell.v;
+      if (typeof v === 'number') numericCells++;
+      else if (typeof v === 'string' && isNaN(Number(v))) stringCells++;
+    }
+    if (stringCells >= 2) {
+      const score = stringCells * 2 - numericCells * 5;
+      if (score > bestScore) { bestScore = score; bestRow = r; }
+    }
+  }
+  return bestRow;
+}
+
 export function readWorkbook(arrayBuffer: ArrayBuffer, fileName: string): WorkbookData {
   const wb = XLSX.read(arrayBuffer, { type: 'array', cellStyles: true, cellFormula: true });
 
@@ -23,13 +47,15 @@ export function readWorkbook(arrayBuffer: ArrayBuffer, fileName: string): Workbo
     const ws = wb.Sheets[name];
     const ref = ws['!ref'] || 'A1';
     const range = XLSX.utils.decode_range(ref);
+    const headerRow = detectHeaderRow(ws, range);
     const headers: string[] = [];
     for (let c = range.s.c; c <= range.e.c; c++) {
-      const addr = XLSX.utils.encode_cell({ r: range.s.r, c });
+      const addr = XLSX.utils.encode_cell({ r: headerRow, c });
       const cell = ws[addr];
-      headers.push(cell ? String(cell.v ?? '') : colLetter(c));
+      const v = cell && cell.v != null && String(cell.v).trim() ? String(cell.v).trim() : colLetter(c);
+      headers.push(v);
     }
-    return { name, rowCount: range.e.r - range.s.r + 1, colCount: range.e.c - range.s.c + 1, headers };
+    return { name, rowCount: range.e.r - range.s.r + 1, colCount: range.e.c - range.s.c + 1, headers, headerRow };
   });
 
   const mappings: FieldMapping[] = [];
@@ -38,7 +64,7 @@ export function readWorkbook(arrayBuffer: ArrayBuffer, fileName: string): Workbo
   sheets.forEach((sheet) => {
     const ws = wb.Sheets[sheet.name];
     if (!ws) return;
-    const jsonData = XLSX.utils.sheet_to_json<Record<string, string | number>>(ws, { defval: '' });
+    const jsonData = XLSX.utils.sheet_to_json<Record<string, string | number>>(ws, { defval: '', range: sheet.headerRow });
 
     if (jsonData.length > 0) {
       sheet.headers.forEach((header, colIdx) => {

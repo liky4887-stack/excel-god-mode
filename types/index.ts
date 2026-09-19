@@ -20,6 +20,7 @@ export interface SheetTab {
   rowCount: number;
   colCount: number;
   headers: string[];
+  headerRow?: number;
 }
 
 export interface WorkbookData {
