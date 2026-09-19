@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import { WorkbookData, SaveVersion, FieldMapping, TemplateMeta, TemplateData } from '@/types';
 
 // ===== Legacy keys (backward compat) =====
@@ -10,6 +11,26 @@ const CF_KEY = 'egm_custom_fields';
 const TEMPLATES_INDEX_KEY = 'egm_templates_index';
 const ACTIVE_TEMPLATE_KEY = 'egm_active_template_id';
 const TEMPLATE_DATA_PREFIX = 'egm_template_data_';
+
+// ===== File-system storage for large template payloads =====
+// AsyncStorage on Android is SQLite-backed with a ~2MB per-key CursorWindow
+// limit. Template data (rawSheets + originalBase64) routinely exceeds it,
+// so we store the full payload as a JSON file and keep only small metadata
+// (index + active id) in AsyncStorage.
+const TEMPLATE_DIR = `${FileSystem.documentDirectory}templates/`;
+
+async function ensureTemplateDir(): Promise<void> {
+  try {
+    const info = await FileSystem.getInfoAsync(TEMPLATE_DIR);
+    if (!info.exists) {
+      await FileSystem.makeDirectoryAsync(TEMPLATE_DIR, { intermediates: true });
+    }
+  } catch {}
+}
+
+function templateDataPath(id: string): string {
+  return `${TEMPLATE_DIR}${id}.json`;
+}
 
 // ===== Legacy functions =====
 export async function saveWorkbook(wb: WorkbookData, originalBase64?: string): Promise<void> {
@@ -74,17 +95,53 @@ export async function setActiveTemplateId(id: string): Promise<void> {
 }
 
 export async function loadTemplateData(id: string): Promise<TemplateData | null> {
-  const data = await AsyncStorage.getItem(`${TEMPLATE_DATA_PREFIX}${id}`);
-  return data ? (JSON.parse(data) as TemplateData) : null;
+  // 1. Try file on disk first (this is the only path that works for big payloads)
+  try {
+    const path = templateDataPath(id);
+    const info = await FileSystem.getInfoAsync(path);
+    if (info.exists) {
+      const json = await FileSystem.readAsStringAsync(path, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      return JSON.parse(json) as TemplateData;
+    }
+  } catch {}
+
+  // 2. Fall back to legacy AsyncStorage key — this will throw for >2MB
+  //    payloads, which we swallow so the app boots. If it succeeds, migrate
+  //    to disk and drop the old key.
+  try {
+    const raw = await AsyncStorage.getItem(`${TEMPLATE_DATA_PREFIX}${id}`);
+    if (raw) {
+      const parsed = JSON.parse(raw) as TemplateData;
+      try {
+        await saveTemplateData(id, parsed);
+        await AsyncStorage.removeItem(`${TEMPLATE_DATA_PREFIX}${id}`);
+      } catch {}
+      return parsed;
+    }
+  } catch {}
+
+  return null;
 }
 
 export async function saveTemplateData(id: string, data: TemplateData): Promise<void> {
-  await AsyncStorage.setItem(`${TEMPLATE_DATA_PREFIX}${id}`, JSON.stringify(data));
+  await ensureTemplateDir();
+  const json = JSON.stringify(data);
+  await FileSystem.writeAsStringAsync(templateDataPath(id), json, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
 }
 
 export async function deleteTemplate(id: string): Promise<void> {
-  // Remove template data
-  await AsyncStorage.removeItem(`${TEMPLATE_DATA_PREFIX}${id}`);
+  // Remove template data file
+  try {
+    await FileSystem.deleteAsync(templateDataPath(id), { idempotent: true });
+  } catch {}
+  // Remove legacy AsyncStorage key if still present (may fail silently if huge)
+  try {
+    await AsyncStorage.removeItem(`${TEMPLATE_DATA_PREFIX}${id}`);
+  } catch {}
   // Remove from index
   const templates = (await listTemplates()).filter((t) => t.id !== id);
   await AsyncStorage.setItem(TEMPLATES_INDEX_KEY, JSON.stringify(templates));

@@ -24,6 +24,50 @@ export interface SheetTab {
   keptColumnIndexes: number[];
 }
 
+
+export interface RawCell {
+  v: string | number | boolean | null;
+  w?: string;
+  styleIndex?: number;
+  isMergedAnchor?: boolean;
+  mergeSpan?: { rowSpan: number; colSpan: number };
+}
+
+export interface RawMerge {
+  s: { r: number; c: number };
+  e: { r: number; c: number };
+}
+
+export interface ChartSpec {
+  type: 'bar' | 'line' | 'pie';
+  title: string;
+  labels: string[];
+  values: number[];
+}
+
+export interface RawImage {
+  id: string;
+  row: number;
+  col: number;
+  rowSpan: number;
+  colSpan: number;
+  data: string;
+  kind?: 'image' | 'chart';
+  chart?: ChartSpec;
+}
+
+export interface RawSheet {
+  name: string;
+  rowCount: number;
+  colCount: number;
+  matrix: (RawCell | null)[][];
+  merges: RawMerge[];
+  colWidths?: number[];
+  rowHeights?: number[];
+  origin: { row: number; col: number };
+  images?: RawImage[];
+}
+
 export interface WorkbookData {
   id: string;
   fileName: string;
@@ -33,6 +77,7 @@ export interface WorkbookData {
   originalBase64: string;
   createdAt: number;
   updatedAt: number;
+  rawSheets?: Record<string, RawSheet>;
 }
 
 export interface SaveVersion {

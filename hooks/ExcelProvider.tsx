@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { WorkbookData, FieldMapping, SaveVersion, TemplateMeta, TemplateData, CalculationResult } from '@/types';
+import { WorkbookData, FieldMapping, SaveVersion, TemplateMeta, TemplateData, CalculationResult, RawCell } from '@/types';
 import {
   listTemplates, getActiveTemplateId, setActiveTemplateId,
   loadTemplateData, saveTemplateData, saveTemplateMeta,
@@ -27,6 +27,18 @@ interface ExcelContextValue {
   createVersion: (label: string) => Promise<string>;
   doRollback: (versionId: string) => Promise<boolean>;
   doDeleteVersion: (versionId: string) => Promise<void>;
+  updateRawCell: (sheetName: string, row: number, col: number, value: string) => Promise<void>;
+  addRawRow: (sheetName: string) => Promise<void>;
+  addRawColumn: (sheetName: string) => Promise<void>;
+  addRawColumnNamed: (sheetName: string, name: string) => Promise<void>;
+  insertRawRow: (sheetName: string, atRow: number) => Promise<void>;
+  insertRawColumn: (sheetName: string, atCol: number) => Promise<void>;
+  updateRawImage: (sheetName: string, imageId: string, patch: { rowSpan?: number; colSpan?: number }) => Promise<void>;
+  deleteRawImage: (sheetName: string, imageId: string) => Promise<void>;
+  addRawImage: (sheetName: string, row: number, col: number, dataUri: string) => Promise<void>;
+  addRawChart: (sheetName: string, row: number, col: number, spec: import('@/types').ChartSpec) => Promise<void>;
+  navigationTarget: { sheet: string; row: number; col: number; nonce: number } | null;
+  setNavigationTarget: (t: { sheet: string; row: number; col: number; nonce: number } | null) => void;
 }
 
 const ExcelContext = createContext<ExcelContextValue | null>(null);
@@ -43,6 +55,7 @@ export function ExcelProvider({ children }: { children: ReactNode }) {
   const [activeTemplateId, setActiveTemplateIdState] = useState<string | null>(null);
   const [activeTemplate, setActiveTemplate] = useState<TemplateData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [navigationTarget, setNavigationTarget] = useState<{ sheet: string; row: number; col: number; nonce: number } | null>(null);
 
   // Load templates and active template on mount
   useEffect(() => {
@@ -56,7 +69,21 @@ export function ExcelProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
 
       if (activeId && tpls.some((t) => t.id === activeId)) {
-        const data = await loadTemplateData(activeId);
+        let data = await loadTemplateData(activeId);
+        // Migration: if rawSheets is missing, re-parse the stored original file
+        if (data && !data.workbook.rawSheets && data.workbook.originalBase64) {
+          try {
+            const bin = atob(data.workbook.originalBase64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const fresh = readWorkbook(bytes.buffer as ArrayBuffer, data.workbook.fileName);
+            data = {
+              ...data,
+              workbook: { ...fresh, originalBase64: data.workbook.originalBase64 },
+            };
+            await saveTemplateData(activeId, data);
+          } catch {}
+        }
         if (cancelled) return;
         setActiveTemplateIdState(activeId);
         setActiveTemplate(data);
@@ -196,6 +223,217 @@ export function ExcelProvider({ children }: { children: ReactNode }) {
     await autoSnapshot(data);
   }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
 
+  const updateRawCell = useCallback(async (sheetName: string, row: number, col: number, value: string) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet) return;
+    const matrix = sheet.matrix.map((r) => r.slice());
+    if (!matrix[row]) return;
+    const cell = matrix[row][col];
+    if (cell) {
+      matrix[row][col] = { ...cell, v: value, w: value };
+    } else {
+      matrix[row][col] = { v: value, w: value };
+    }
+    rawSheets[sheetName] = { ...sheet, matrix };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const addRawRow = useCallback(async (sheetName: string) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet) return;
+    const matrix = sheet.matrix.map((r) => r.slice());
+    const newRow: (RawCell | null)[] = Array.from({ length: sheet.colCount }, () => ({ v: '' }));
+    matrix.push(newRow);
+    rawSheets[sheetName] = { ...sheet, matrix, rowCount: sheet.rowCount + 1 };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const addRawColumn = useCallback(async (sheetName: string) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet) return;
+
+    // Find header row: first row with 2+ non-empty cells
+    let headerRowIdx = 0;
+    for (let r = 0; r < Math.min(sheet.matrix.length, 5); r++) {
+      const nonEmpty = (sheet.matrix[r] || []).filter(
+        (c) => c && c.v !== null && c.v !== undefined && String(c.v).trim() !== ''
+      ).length;
+      if (nonEmpty >= 2) { headerRowIdx = r; break; }
+    }
+
+    const matrix = sheet.matrix.map((r) => {
+      const nr = r.slice();
+      nr.push({ v: '' });
+      return nr;
+    });
+    const colWidths = [...(sheet.colWidths || []), 120];
+    rawSheets[sheetName] = { ...sheet, matrix, colCount: sheet.colCount + 1, colWidths };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const insertRawRow = useCallback(async (sheetName: string, atRow: number) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet) return;
+    const matrix = sheet.matrix.map((r) => r.slice());
+    const newRow: (RawCell | null)[] = Array.from({ length: sheet.colCount }, () => ({ v: '' }));
+    matrix.splice(atRow, 0, newRow);
+    rawSheets[sheetName] = { ...sheet, matrix, rowCount: sheet.rowCount + 1 };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const insertRawColumn = useCallback(async (sheetName: string, atCol: number) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet) return;
+    const matrix = sheet.matrix.map((r) => {
+      const nr = r.slice();
+      nr.splice(atCol, 0, { v: '' });
+      return nr;
+    });
+    const colWidths = [...(sheet.colWidths || [])];
+    colWidths.splice(atCol, 0, 120);
+    rawSheets[sheetName] = { ...sheet, matrix, colCount: sheet.colCount + 1, colWidths };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const updateRawImage = useCallback(async (sheetName: string, imageId: string, patch: { rowSpan?: number; colSpan?: number }) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet || !sheet.images) return;
+    const images = sheet.images.map((img) => img.id === imageId ? { ...img, ...patch } : img);
+    rawSheets[sheetName] = { ...sheet, images };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const deleteRawImage = useCallback(async (sheetName: string, imageId: string) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet || !sheet.images) return;
+    const images = sheet.images.filter((img) => img.id !== imageId);
+    rawSheets[sheetName] = { ...sheet, images };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const addRawColumnNamed = useCallback(async (sheetName: string, name: string) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet) return;
+
+    // Find the header row: first row with 2+ non-empty cells
+    let headerRowIdx = 0;
+    for (let r = 0; r < Math.min(sheet.matrix.length, 10); r++) {
+      const nonEmpty = (sheet.matrix[r] || []).filter(
+        (c) => c && c.v !== null && c.v !== undefined && String(c.v).trim() !== ''
+      ).length;
+      if (nonEmpty >= 2) { headerRowIdx = r; break; }
+    }
+
+    const matrix = sheet.matrix.map((r, rIdx) => {
+      const nr = r.slice();
+      nr.push(rIdx === headerRowIdx ? { v: name } : { v: '' });
+      return nr;
+    });
+    const colWidths = [...(sheet.colWidths || []), 140];
+    rawSheets[sheetName] = { ...sheet, matrix, colCount: sheet.colCount + 1, colWidths };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const addRawImage = useCallback(async (sheetName: string, row: number, col: number, dataUri: string) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet) return;
+    const images = [...(sheet.images || []), {
+      id: 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      row, col,
+      rowSpan: 6,
+      colSpan: 6,
+      data: dataUri,
+    }];
+    rawSheets[sheetName] = { ...sheet, images };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
+  const addRawChart = useCallback(async (sheetName: string, row: number, col: number, spec: import('@/types').ChartSpec) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const sheet = rawSheets[sheetName];
+    if (!sheet) return;
+    const images = [...(sheet.images || []), {
+      id: 'chart_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      row, col,
+      rowSpan: 8,
+      colSpan: 8,
+      data: '',
+      kind: 'chart' as const,
+      chart: spec,
+    }];
+    rawSheets[sheetName] = { ...sheet, images };
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets },
+    };
+    setActiveTemplate(data);
+    await persistActiveTemplate(data);
+  }, [activeTemplateId, activeTemplate, persistActiveTemplate]);
+
   const addCustomField = useCallback(async (field: FieldMapping) => {
     if (!activeTemplateId || !activeTemplate) return;
     const customFields = [...activeTemplate.customFields, field];
@@ -282,6 +520,18 @@ export function ExcelProvider({ children }: { children: ReactNode }) {
 
   return (
     <ExcelContext.Provider value={{
+      updateRawCell,
+      addRawRow,
+      addRawColumn,
+      addRawColumnNamed,
+      insertRawRow,
+      insertRawColumn,
+      updateRawImage,
+      deleteRawImage,
+      addRawImage,
+      addRawChart,
+      navigationTarget,
+      setNavigationTarget,
       templates,
       activeTemplateId,
       activeTemplate,

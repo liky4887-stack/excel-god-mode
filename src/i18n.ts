@@ -1,7 +1,7 @@
 import { Language } from '@/types';
 
 export type TKey =
-  | 'appName' | 'tagline' | 'commandCenter' | 'quickEntry' | 'auditView'
+  | 'appName' | 'tagline' | 'commandCenter' | 'quickEntry' | 'auditView' | 'gridView' | 'formView' | 'editCell' | 'addRow' | 'addColumn' | 'insertRowAbove' | 'insertRowBelow' | 'insertColRight' | 'newColumnName' | 'createColumn' | 'columnCreated' | 'addImage' | 'imageAdded' | 'positionRow' | 'positionCol' | 'chartValues' | 'chartAsNumber' | 'chartAsPercent' | 'chartData' | 'addDataRow' | 'labelPlaceholder' | 'chartNoData' | 'addChart' | 'createChart' | 'chartTitle' | 'chartType' | 'chartBar' | 'chartLine' | 'chartPie' | 'chartColumn' | 'preview' | 'insertChart' | 'imageOptions' | 'deleteImage' | 'resizeSmall' | 'resizeMedium' | 'resizeLarge'
   | 'exportFile' | 'importTemplate' | 'settings' | 'search' | 'searchPlaceholder'
   | 'noResults' | 'import' | 'export' | 'exportXlsx' | 'exportPdf' | 'cancel'
   | 'save' | 'rollback' | 'confirm' | 'delete' | 'addField' | 'fieldLabel'
@@ -118,6 +118,44 @@ const en: Record<TKey, string> = {
   rows: 'Rows',
   columns: 'Columns',
   close: 'Close',
+  imageOptions: 'Image',
+  deleteImage: 'Delete image',
+  resizeSmall: 'Small',
+  resizeMedium: 'Medium',
+  resizeLarge: 'Large',
+  addImage: 'Add image',
+  positionRow: 'Row',
+  chartValues: 'Values',
+  chartAsNumber: 'As number',
+  chartAsPercent: 'As percentage',
+  chartData: 'Data',
+  addDataRow: 'Add row',
+  labelPlaceholder: 'Name',
+  chartNoData: 'Add a name and value to see the chart',
+  positionCol: 'Column',
+  addChart: 'Add chart',
+  createChart: 'Create chart',
+  chartTitle: 'Chart title',
+  chartType: 'Chart type',
+  chartBar: 'Bar',
+  chartLine: 'Line',
+  chartPie: 'Pie',
+  chartColumn: 'Data column',
+  preview: 'Preview',
+  insertChart: 'Insert chart',
+  imageAdded: 'Image added',
+  newColumnName: 'Column name',
+  createColumn: 'Create column',
+  columnCreated: 'Column created',
+  insertRowAbove: 'Row above',
+  insertRowBelow: 'Row below',
+  insertColRight: 'Column right',
+  addRow: 'Add Row',
+  addColumn: 'Add Column',
+  gridView: 'Grid View',
+  formView: 'Form View',
+  editCell: 'Edit Cell',
+
 };
 
 const ar: Record<TKey, string> = {
@@ -217,6 +255,44 @@ const ar: Record<TKey, string> = {
   rows: 'الصفوف',
   columns: 'الأعمدة',
   close: 'إغلاق',
+  imageOptions: 'الصورة',
+  deleteImage: 'حذف الصورة',
+  resizeSmall: 'صغير',
+  resizeMedium: 'متوسط',
+  resizeLarge: 'كبير',
+  addImage: 'إضافة صورة',
+  positionRow: 'صف',
+  chartValues: 'القيم',
+  chartAsNumber: 'كأرقام',
+  chartAsPercent: 'كنسبة مئوية',
+  chartData: 'البيانات',
+  addDataRow: 'إضافة صف',
+  labelPlaceholder: 'الاسم',
+  chartNoData: 'أضف اسمًا وقيمة لرؤية الرسم',
+  positionCol: 'عمود',
+  addChart: 'إضافة رسم بياني',
+  createChart: 'إنشاء رسم بياني',
+  chartTitle: 'عنوان الرسم',
+  chartType: 'نوع الرسم',
+  chartBar: 'أعمدة',
+  chartLine: 'خطي',
+  chartPie: 'دائري',
+  chartColumn: 'عمود البيانات',
+  preview: 'معاينة',
+  insertChart: 'إدراج الرسم',
+  imageAdded: 'تمت إضافة الصورة',
+  newColumnName: 'اسم العمود',
+  createColumn: 'إنشاء عمود',
+  columnCreated: 'تم إنشاء العمود',
+  insertRowAbove: 'صف أعلى',
+  insertRowBelow: 'صف أسفل',
+  insertColRight: 'عمود يمين',
+  addRow: 'إضافة صف',
+  addColumn: 'إضافة عمود',
+  gridView: 'عرض الجدول',
+  formView: 'عرض النموذج',
+  editCell: 'تعديل الخلية',
+
 };
 
 export const translations: Record<Language, Record<TKey, string>> = { en, ar };
