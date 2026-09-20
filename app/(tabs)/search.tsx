@@ -1,3 +1,4 @@
+import { ScreenBoundary } from '@/components/ScreenBoundary';
 import { memo, useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -98,7 +99,15 @@ function SearchScreen() {
   );
 }
 
-export default memo(SearchScreen);
+function SearchScreenWrapped() {
+  return (
+    <ScreenBoundary screenName="Search">
+      <SearchScreen />
+    </ScreenBoundary>
+  );
+}
+
+export default memo(SearchScreenWrapped);
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A', paddingTop: 60, paddingHorizontal: 20 },

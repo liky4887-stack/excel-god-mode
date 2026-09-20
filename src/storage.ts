@@ -133,19 +133,93 @@ export async function saveTemplateData(id: string, data: TemplateData): Promise<
   });
 }
 
+function overlaysPath(id: string): string {
+  return `${TEMPLATE_DIR}${id}.overlays.json`;
+}
+
+export async function saveOverlays(id: string, overlays: any[]): Promise<void> {
+  await ensureTemplateDir();
+  try {
+    const json = JSON.stringify(overlays || []);
+    await FileSystem.writeAsStringAsync(overlaysPath(id), json, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    if (__DEV__) console.log('[overlays] saved', overlays.length, 'bytes:', json.length);
+  } catch (e) {
+    if (__DEV__) console.warn('[overlays] SAVE FAILED', e);
+    throw e;
+  }
+}
+
+export async function loadOverlays(id: string): Promise<any[]> {
+  try {
+    const path = overlaysPath(id);
+    const info = await FileSystem.getInfoAsync(path);
+    if (!info.exists) {
+      if (__DEV__) console.log('[overlays] no file — first time');
+      return [];
+    }
+    const json = await FileSystem.readAsStringAsync(path, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    const parsed = JSON.parse(json || '[]');
+    if (__DEV__) console.log('[overlays] loaded', parsed.length);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    if (__DEV__) console.warn('[overlays] LOAD FAILED', e);
+    return [];
+  }
+}
+
 export async function deleteTemplate(id: string): Promise<void> {
-  // Remove template data file
+  // 1. Remove template DATA json file
   try {
     await FileSystem.deleteAsync(templateDataPath(id), { idempotent: true });
   } catch {}
-  // Remove legacy AsyncStorage key if still present (may fail silently if huge)
+
+  // 2. Remove the ORIGINAL .xlsx copy (permanent storage)
+  try {
+    const xlsxPath = `${FileSystem.documentDirectory}templates/${id}.xlsx`;
+    await FileSystem.deleteAsync(xlsxPath, { idempotent: true });
+  } catch {}
+
+  // 2b. Remove the overlays file
+  try {
+    const overlaysFile = `${FileSystem.documentDirectory}templates/${id}.overlays.json`;
+    await FileSystem.deleteAsync(overlaysFile, { idempotent: true });
+  } catch {}
+
+  // 3. Remove any exported files for this template
+  try {
+    const exportsDir = `${FileSystem.documentDirectory}exports/`;
+    const dirInfo = await FileSystem.getInfoAsync(exportsDir);
+    if (dirInfo.exists) {
+      const files = await FileSystem.readDirectoryAsync(exportsDir);
+      for (const f of files) {
+        if (f.includes(id) || f.startsWith(id)) {
+          try {
+            await FileSystem.deleteAsync(`${exportsDir}${f}`, { idempotent: true });
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+
+  // 4. Remove legacy AsyncStorage key if still present
   try {
     await AsyncStorage.removeItem(`${TEMPLATE_DATA_PREFIX}${id}`);
   } catch {}
-  // Remove from index
+
+  // 5. Remove legacy versions for this template
+  try {
+    await AsyncStorage.removeItem(`egm_versions_${id}`);
+  } catch {}
+
+  // 6. Remove from index
   const templates = (await listTemplates()).filter((t) => t.id !== id);
   await AsyncStorage.setItem(TEMPLATES_INDEX_KEY, JSON.stringify(templates));
-  // If active, clear active
+
+  // 7. If active, clear active
   const active = await getActiveTemplateId();
   if (active === id) {
     await setActiveTemplateId('');

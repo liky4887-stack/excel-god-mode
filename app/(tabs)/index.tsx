@@ -1,14 +1,16 @@
+import { ScreenBoundary } from '@/components/ScreenBoundary';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, FlatList } from 'react-native';
 import { useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { FileSpreadsheet, Zap, History, Download, Upload, Search, Database, Shield, TrendingUp, Plus } from 'lucide-react-native';
+import { FileSpreadsheet, Zap, History, Download, Upload, Search, Database, Shield, TrendingUp, Plus, Trash2 } from 'lucide-react-native';
+import { Alert } from 'react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
 import { TemplateMeta } from '@/types';
 
-export default function HomeScreen() {
+function HomeScreenInner() {
   const { t } = useLanguage();
-  const { templates, activeTemplateId, activeTemplate, isLoading, switchTemplate, importTemplate } = useExcel();
+  const { templates, activeTemplateId, activeTemplate, isLoading, switchTemplate, importTemplate, deleteTemplate } = useExcel();
   const router = useRouter();
 
   const handlePickAndImport = useCallback(async () => {
@@ -18,6 +20,21 @@ export default function HomeScreen() {
   const handleTemplatePress = useCallback((id: string) => {
     switchTemplate(id);
   }, [switchTemplate]);
+
+  const confirmDelete = useCallback((id: string, name: string) => {
+    Alert.alert(
+      'Delete template?',
+      `"${name}" will be permanently deleted, including the original .xlsx file, all edits, overlays, and history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => { deleteTemplate(id); },
+        },
+      ]
+    );
+  }, [deleteTemplate]);
 
   const activeMeta = templates.find((t) => t.id === activeTemplateId) || null;
   const hasActive = activeTemplate !== null && activeTemplate.workbook && activeTemplate.workbook.sheets.length > 0;
@@ -65,6 +82,13 @@ export default function HomeScreen() {
             </Text>
             <Text style={styles.templateMeta}>{item.recordCount} records · {item.sheetCount} sheets</Text>
             {item.id === activeTemplateId && <View style={styles.activeBadge}><Text style={styles.activeBadgeText}>Active</Text></View>}
+            <TouchableOpacity
+              style={styles.deleteBtn}
+              onPress={(e) => { e.stopPropagation?.(); confirmDelete(item.id, item.name); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Trash2 size={14} color="#FF4444" strokeWidth={2.5} />
+            </TouchableOpacity>
           </TouchableOpacity>
         )}
       />
@@ -137,6 +161,7 @@ const styles = StyleSheet.create({
   offlineText: { fontSize: 12, fontWeight: '600', color: '#00D9A3' },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#E8E8E8', marginBottom: 14 },
   templateCard: { width: 180, backgroundColor: '#121212', borderWidth: 1, borderColor: '#1E1E1E', borderRadius: 14, padding: 14, marginRight: 12, alignItems: 'center', gap: 6 },
+  deleteBtn: { position: 'absolute', top: 8, right: 8, width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: 'rgba(255,68,68,0.12)' },
   templateCardActive: { borderColor: '#00D9A3', backgroundColor: 'rgba(0,217,163,0.06)' },
   templateIconWrap: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(59,158,255,0.12)', alignItems: 'center', justifyContent: 'center' },
   templateName: { fontSize: 14, fontWeight: '600', color: '#CCC', textAlign: 'center' },
@@ -162,3 +187,13 @@ const styles = StyleSheet.create({
   footer: { paddingVertical: 32, alignItems: 'center' },
   footerText: { fontSize: 12, color: '#333' },
 });
+
+function HomeScreen() {
+  return (
+    <ScreenBoundary screenName="Home">
+      <HomeScreenInner />
+    </ScreenBoundary>
+  );
+}
+
+export default HomeScreen;

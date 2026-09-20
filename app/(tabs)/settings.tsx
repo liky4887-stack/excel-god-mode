@@ -1,9 +1,10 @@
+import { ScreenBoundary } from '@/components/ScreenBoundary';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useCallback } from 'react';
 import { Globe, Shield, Info } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 
-export default function SettingsScreen() {
+function SettingsScreenInner() {
   const { t, language, setLanguage } = useLanguage();
 
   const handleSetArabic = useCallback(() => setLanguage('ar'), [setLanguage]);
@@ -74,3 +75,13 @@ const styles = StyleSheet.create({
   langBtnTextActive: { color: '#00D9A3', fontWeight: '700' },
   versionText: { fontSize: 13, color: '#444', marginTop: 8 },
 });
+
+function SettingsScreen() {
+  return (
+    <ScreenBoundary screenName="Settings">
+      <SettingsScreenInner />
+    </ScreenBoundary>
+  );
+}
+
+export default SettingsScreen;

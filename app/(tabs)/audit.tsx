@@ -1,17 +1,19 @@
+import { ScreenBoundary } from '@/components/ScreenBoundary';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { useCallback, useState } from 'react';
-import { Save, RotateCcw } from 'lucide-react-native';
+import { Save, RotateCcw, Activity, Image as ImageIcon, BarChart3, Trash2 } from 'lucide-react-native';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
 import VersionCard from '@/components/VersionCard';
 
-export default function AuditScreen() {
+function AuditScreenInner() {
   const { t } = useLanguage();
-  const { activeTemplate, activeTemplateId, createVersion, doRollback, doDeleteVersion } = useExcel();
+  const { activeTemplate, activeTemplateId, createVersion, doRollback, doDeleteVersion, activityLog } = useExcel();
   const [showSave, setShowSave] = useState(false);
   const [label, setLabel] = useState('');
   const [saving, setSaving] = useState(false);
   const [rollingBack, setRollingBack] = useState<string | null>(null);
+  const [tab, setTab] = useState<'versions' | 'activity'>('versions');
 
   const handleSave = useCallback(async () => {
     if (!label.trim()) return;
@@ -62,7 +64,65 @@ export default function AuditScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{t('versionHistory')}</Text>
+      <Text style={styles.title}>{tab === 'versions' ? t('versionHistory') : 'Activity'}</Text>
+
+      <View style={styles.tabRow}>
+        <TouchableOpacity
+          style={[styles.tabBtn, tab === 'versions' && styles.tabBtnActive]}
+          onPress={() => setTab('versions')}
+        >
+          <Text style={[styles.tabText, tab === 'versions' && styles.tabTextActive]}>
+            {t('versionHistory')}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, tab === 'activity' && styles.tabBtnActive]}
+          onPress={() => setTab('activity')}
+        >
+          <Text style={[styles.tabText, tab === 'activity' && styles.tabTextActive]}>
+            Activity ({activityLog.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {tab === 'activity' ? (
+        <ScrollView style={styles.versions} showsVerticalScrollIndicator={false}>
+          {activityLog.length === 0 ? (
+            <View style={styles.noVersionsContainer}>
+              <Activity size={32} color="#333" strokeWidth={1.5} />
+              <Text style={styles.noVersionsText}>No activity yet</Text>
+              <Text style={styles.activityHint}>Add an image, chart, row, or edit a cell</Text>
+            </View>
+          ) : (
+            activityLog.map((entry) => {
+              const Icon =
+                entry.kind.startsWith('image') ? ImageIcon :
+                entry.kind.startsWith('chart') ? BarChart3 :
+                entry.kind.includes('delete') ? Trash2 : Activity;
+              const color =
+                entry.kind.includes('add') ? '#00D9A3' :
+                entry.kind.includes('delete') ? '#FF4444' :
+                entry.kind.includes('resize') ? '#3B9EFF' :
+                '#FFB444';
+              const when = new Date(entry.ts).toLocaleString();
+              return (
+                <View key={entry.id} style={styles.activityCard}>
+                  <View style={[styles.activityIcon, { backgroundColor: color + '20' }]}>
+                    <Icon size={16} color={color} strokeWidth={2.5} />
+                  </View>
+                  <View style={styles.activityInfo}>
+                    <Text style={styles.activityTitle} numberOfLines={2}>{entry.summary}</Text>
+                    <Text style={styles.activityMeta}>
+                      {entry.sheetName} · {when}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+      ) : (
+        <>
       <View style={styles.saveSection}>
         {showSave ? (
           <View style={styles.saveInputRow}>
@@ -99,6 +159,8 @@ export default function AuditScreen() {
           ))
         )}
       </ScrollView>
+        </>
+      )}
     </View>
   );
 }
@@ -106,6 +168,17 @@ export default function AuditScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A', paddingTop: 60, paddingHorizontal: 20 },
   title: { fontSize: 22, fontWeight: '700', color: '#FFF', marginBottom: 20 },
+  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#333', alignItems: 'center' },
+  tabBtnActive: { borderColor: '#00D9A3', backgroundColor: 'rgba(0,217,163,0.12)' },
+  tabText: { color: '#666', fontSize: 14, fontWeight: '600' },
+  tabTextActive: { color: '#00D9A3', fontWeight: '700' },
+  activityCard: { flexDirection: 'row', gap: 12, backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#222', borderRadius: 12, padding: 12, marginBottom: 8, alignItems: 'center' },
+  activityIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  activityInfo: { flex: 1 },
+  activityTitle: { color: '#E8E8E8', fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  activityMeta: { color: '#5A5A60', fontSize: 11 },
+  activityHint: { color: '#444', fontSize: 12, marginTop: 4 },
   saveSection: { marginBottom: 20 },
   saveVersionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 2, borderColor: 'rgba(0,217,163,0.3)', borderStyle: 'dashed', borderRadius: 14, paddingVertical: 14 },
   saveVersionText: { fontSize: 16, fontWeight: '600', color: '#00D9A3' },
@@ -122,3 +195,13 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { fontSize: 18, color: '#666' },
 });
+
+function AuditScreen() {
+  return (
+    <ScreenBoundary screenName="Audit">
+      <AuditScreenInner />
+    </ScreenBoundary>
+  );
+}
+
+export default AuditScreen;

@@ -213,7 +213,18 @@ export function readRawSheet(wb: XLSX.WorkBook, sheetName: string): RawSheet {
   const colWidths = (ws['!cols'] || []).map((col: XLSX.ColInfo) => col.wch || (col.wpx ? col.wpx / 7 : 120));
   const rowHeights: number[] = (ws['!rows'] || []).map((row: XLSX.RowInfo): number => row.hpt || (row.hpx ? row.hpx : 0)).filter((h: number) => h > 0);
 
-  const images = (wb as any).files ? extractImagesForSheet((wb as any).files, 'xl/worksheets/sheet' + (wb.SheetNames.indexOf(sheetName) + 1) + '.xml') : [];
+
+  // Trim trailing fully-empty rows so user-added rows appear where expected
+  while (matrix.length > 0) {
+    const last = matrix[matrix.length - 1];
+    const allEmpty = last.every((c: any) => !c || c.v === null || c.v === undefined || String(c.v).trim() === '');
+    if (allEmpty) matrix.pop();
+    else break;
+  }
+
+  const sheetIndex = wb.SheetNames.indexOf(sheetName);
+  const sheetPath = 'xl/worksheets/sheet' + (sheetIndex + 1) + '.xml';
+  const images = extractImagesForSheet((wb as any).files, sheetPath);
 
   return {
     name: sheetName,
@@ -382,19 +393,58 @@ function getFormula(ws: XLSX.WorkSheet, colIdx: number, rowCount: number): strin
 }
 
 export function writeWorkbook(wbData: WorkbookData, originalBase64: string): ArrayBuffer {
-  const binary = atob(originalBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const wb = XLSX.read(bytes.buffer, { type: 'array', cellStyles: true, cellFormula: true });
+  const wb = XLSX.read(originalBase64, { type: 'base64', cellStyles: true, cellFormula: true });
 
-  wbData.sheets.forEach((sheet) => {
-    const ws = wb.Sheets[sheet.name];
-    if (!ws) return;
-    wbData.records
-      .filter((r) => r._sheetName === sheet.name)
-      .forEach((record, idx) => {
+  // 1. Apply rawSheets matrix edits first (the grid the user edited)
+  if (wbData.rawSheets) {
+    for (const sheetName of wb.SheetNames) {
+      const rawSheet = wbData.rawSheets[sheetName];
+      if (!rawSheet || !rawSheet.matrix) continue;
+      const ws = wb.Sheets[sheetName];
+      if (!ws) continue;
+
+      const originRow = rawSheet.origin?.row ? rawSheet.origin.row - 1 : 0;
+      const originCol = rawSheet.origin?.col ? rawSheet.origin.col - 1 : 0;
+
+      for (let r = 0; r < rawSheet.matrix.length; r++) {
+        const row = rawSheet.matrix[r];
+        if (!row) continue;
+        for (let c = 0; c < row.length; c++) {
+          const cell = row[c];
+          if (!cell) continue;
+          const v = (cell as any).v;
+          if (v === undefined || v === null || v === '') continue;
+
+          const addr = XLSX.utils.encode_cell({ r: originRow + r, c: originCol + c });
+          const existing = ws[addr];
+          if (existing && existing.f) {
+            existing.v = v;
+          } else {
+            ws[addr] = {
+              t: typeof v === 'number' ? 'n' : typeof v === 'boolean' ? 'b' : 's',
+              v,
+            };
+          }
+        }
+      }
+
+      // Recompute !ref to include any new rows/cols
+      const newRange = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      newRange.e.r = Math.max(newRange.e.r, originRow + rawSheet.matrix.length - 1);
+      newRange.e.c = Math.max(newRange.e.c, originCol + rawSheet.colCount - 1);
+      ws['!ref'] = XLSX.utils.encode_range(newRange);
+    }
+  }
+
+  // 2. Legacy: also write records array (backward compat)
+  if (wbData.sheets) {
+    wbData.sheets.forEach((sheet) => {
+      const ws = wb.Sheets[sheet.name];
+      if (!ws) return;
+      const sheetRecords = (wbData.records || []).filter((r: any) => r._sheetName === sheet.name);
+      sheetRecords.forEach((record: any, idx: number) => {
         const rowIndex = idx + 2;
-        sheet.headers.forEach((_, colIdx) => {
+        sheet.headers.forEach((_: any, colIdx: number) => {
           const cl = colLetter(colIdx);
           const key = `${sheet.name}.${cl}`;
           const value = record[key];
@@ -406,10 +456,12 @@ export function writeWorkbook(wbData: WorkbookData, originalBase64: string): Arr
           }
         });
       });
-  });
+    });
+  }
 
-  return XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true }) as ArrayBuffer;
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true, bookSST: true } as any) as ArrayBuffer;
 }
+
 
 export function searchInWorkbook(wbData: WorkbookData, query: string): SearchResult[] {
   if (!query) return [];

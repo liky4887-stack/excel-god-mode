@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal, Platform } from 'react-native';
 import { useCallback, useState } from 'react';
 import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -7,13 +7,14 @@ import { ArrowLeft, Download, FileText, FileSpreadsheet, CheckCircle2 } from 'lu
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
 import { writeWorkbook, base64ToBuffer, bufferToBase64 } from '@/src/excelBridge';
+import { patchXlsxWithEdits } from '@/src/xlsxPatcher';
 
 type ExportFormat = 'xlsx' | 'pdf' | 'both';
 
 export default function ExportScreen() {
   const { t } = useLanguage();
   const router = useRouter();
-  const { activeTemplate, activeTemplateId } = useExcel();
+  const { activeTemplate, activeTemplateId, overlays} = useExcel();
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -44,18 +45,87 @@ export default function ExportScreen() {
     setExporting('xlsx');
     setProgress(`Exporting ${workbook.fileName}...`);
     try {
-      if (!workbook.originalBase64) throw new Error('No original buffer');
-      const outBuffer = writeWorkbook(workbook, workbook.originalBase64);
-      const b64 = bufferToBase64(outBuffer);
+        let originalBase64 = workbook.originalBase64;
+        if (!originalBase64) {
+          const uri = (workbook as any).originalFileUri;
+          if (!uri) throw new Error('Original file not found - re-import the template');
+          originalBase64 = await FileSystem.readAsStringAsync(uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+        }
+        if (!originalBase64) throw new Error('Empty original buffer');
+
+        // Surgical XML patch — preserves original formatting, styles, formulas,
+        // merges, drawings, print setup, and every image embedded in the file.
+        // Only the values the user edited get substituted in-place.
+        const originalBytes = base64ToBuffer(originalBase64);
+        const userMerges = activeTemplate?.merges || [];
+        const appStyles = {
+          cellStyles: (activeTemplate as any)?.cellStyles,
+          rowStyles: (activeTemplate as any)?.rowStyles,
+          colStyles: (activeTemplate as any)?.colStyles,
+          overlays: (overlays || []).map((o: any) => ({
+            id: o.id,
+            sheetName: o.sheetName,
+            row: o.row,
+            col: o.col,
+            type: o.type,
+            imageUri: o.imageUri,
+            size: o.size,
+            scalePercent: o.scalePercent,
+          })),
+        };
+        const patchedBytes = patchXlsxWithEdits(
+          new Uint8Array(originalBytes),
+          workbook,
+          userMerges,
+          appStyles
+        );
+        const b64 = bufferToBase64(patchedBytes.buffer as ArrayBuffer);
       const fileName = workbook.fileName.replace(/\.(xlsx|xls)$/, '') + '_export.xlsx';
-      const filePath = FileSystem.cacheDirectory + fileName;
-      await FileSystem.writeAsStringAsync(filePath, b64, { encoding: FileSystem.EncodingType.Base64 });
-      await Sharing.shareAsync(filePath, {
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        dialogTitle: t('exportXlsx'),
-        UTI: 'org.openxmlformats.spreadsheetml.sheet',
-      });
-      Alert.alert(t('fileExported'), '');
+      const cachePath = FileSystem.cacheDirectory + fileName;
+      await FileSystem.writeAsStringAsync(cachePath, b64, { encoding: FileSystem.EncodingType.Base64 });
+
+      if (Platform.OS === 'android') {
+        try {
+          const SAF: any = (FileSystem as any).StorageAccessFramework;
+          const perm = await SAF.requestDirectoryPermissionsAsync();
+          if (perm?.granted && perm.directoryUri) {
+            const safUri = await SAF.createFileAsync(
+              perm.directoryUri,
+              fileName,
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            );
+            await FileSystem.writeAsStringAsync(safUri, b64, { encoding: FileSystem.EncodingType.Base64 });
+            // Also mirror into exports/ for cleanup tracking
+            try {
+              const exportsDir = FileSystem.documentDirectory + 'exports/';
+              const info = await FileSystem.getInfoAsync(exportsDir);
+              if (!info.exists) await FileSystem.makeDirectoryAsync(exportsDir, { intermediates: true });
+              await FileSystem.writeAsStringAsync(exportsDir + activeTemplateId + '_' + fileName, b64, { encoding: FileSystem.EncodingType.Base64 });
+            } catch {}
+            Alert.alert(t('fileExported'), 'Saved to ' + fileName);
+          } else {
+            await Sharing.shareAsync(cachePath, {
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              dialogTitle: t('exportXlsx'),
+              UTI: 'org.openxmlformats.spreadsheetml.sheet',
+            });
+          }
+        } catch (safErr) {
+          await Sharing.shareAsync(cachePath, {
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            dialogTitle: t('exportXlsx'),
+            UTI: 'org.openxmlformats.spreadsheetml.sheet',
+          });
+        }
+      } else {
+        await Sharing.shareAsync(cachePath, {
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          dialogTitle: t('exportXlsx'),
+          UTI: 'org.openxmlformats.spreadsheetml.sheet',
+        });
+      }
     } catch (e) {
       Alert.alert(t('exportError'), String(e));
     } finally {
@@ -131,7 +201,7 @@ export default function ExportScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.exportCard} activeOpacity={0.7} onPress={handleExport} disabled={exporting !== null}>
+        <TouchableOpacity style={styles.exportCard} activeOpacity={0.7} onPress={() => handleExportXlsx()} disabled={exporting !== null}>
           <View style={[styles.exportIcon, { backgroundColor: 'rgba(0,217,163,0.12)' }]}>
             {exporting === 'xlsx' ? <ActivityIndicator size="small" color="#00D9A3" /> : <FileSpreadsheet size={24} color="#00D9A3" strokeWidth={2} />}
           </View>
@@ -142,7 +212,7 @@ export default function ExportScreen() {
           <Download size={20} color="#444" strokeWidth={2} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.exportCard} activeOpacity={0.7} onPress={handleExport} disabled={exporting !== null}>
+        <TouchableOpacity style={styles.exportCard} activeOpacity={0.7} onPress={() => handleExportPdf()} disabled={exporting !== null}>
           <View style={[styles.exportIcon, { backgroundColor: 'rgba(255,180,68,0.12)' }]}>
             {exporting === 'pdf' ? <ActivityIndicator size="small" color="#FFB444" /> : <FileText size={24} color="#FFB444" strokeWidth={2} />}
           </View>

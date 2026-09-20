@@ -1,16 +1,18 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { ScreenBoundary } from '@/components/ScreenBoundary';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, TextInput, KeyboardAvoidingView, Platform, Alert} from 'react-native';
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useLanguage } from '@/hooks/useLanguage';
 import { useExcel } from '@/hooks/ExcelProvider';
 import { SheetGridView } from '@/components/SheetGridView';
 import { ChartBuilderModal } from '@/components/ChartBuilderModal';
 import { ChartSpec } from '@/types';
 
-export default function FormScreen() {
+function FormScreenInner() {
   const { t } = useLanguage();
   const router = useRouter();
   const {
@@ -25,15 +27,19 @@ export default function FormScreen() {
     addRawImage,
     addRawChart,
     navigationTarget,
-    setNavigationTarget,
-  } = useExcel();
+    setNavigationTarget, updateOverlay, deleteOverlay, addOverlay, overlays, updateCellStyle, cellStyles, updateRowStyle, updateColStyle, moveRow, moveColumn, rowStyles, colStyles, addMerge, removeMerge, merges, updateCellAndStyle} = useExcel();
 
   const [selectedSheet, setSelectedSheet] = useState('');
   const [focusCell, setFocusCell] = useState<{ row: number; col: number; nonce: number } | null>(null);
   const [imagePosition, setImagePosition] = useState<{ row: number; col: number } | null>(null);
   const [chartPosition, setChartPosition] = useState<{ row: number; col: number } | null>(null);
+  const [showChartModal, setShowChartModal] = useState(false);
 
   const workbook = activeTemplate?.workbook;
+
+  const sheetOverlays = useMemo(() => {
+    return (overlays || []).filter((o: any) => o.sheetName === selectedSheet);
+  }, [overlays, selectedSheet]);
 
   // Auto-select first sheet
   useMemo(() => {
@@ -98,30 +104,89 @@ export default function FormScreen() {
     if (selectedSheet) deleteRawImage(selectedSheet, imageId);
   }, [selectedSheet, deleteRawImage]);
 
-  const handleAddImage = useCallback(async () => {
-    if (!selectedSheet || !imagePosition) return;
+    const handleAddImage = useCallback(async () => {
+    if (!selectedSheet || !addOverlay) return;
     try {
       const res = await DocumentPicker.getDocumentAsync({
         type: ['image/png', 'image/jpeg', 'image/jpg'],
         copyToCacheDirectory: true,
       });
-      if (res.canceled || !res.assets?.length) { setImagePosition(null); return; }
+      if (res.canceled || !res.assets?.length) return;
       const asset = res.assets[0];
-      const b64 = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.Base64,
+
+      // Size guard — reject anything over 15MB before we even try to compress
+      if (asset.size && asset.size > 15 * 1024 * 1024) {
+        Alert.alert('Image too large', 'Please use an image under 15 MB.');
+        return;
+      }
+
+      // Compress: resize to max 1400px wide, JPEG quality 0.75
+      // Typical result: 4MB phone photo -> ~180KB (a ~20x reduction)
+      const manipResult = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1400 } }],
+        {
+          compress: 0.75,
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true,
+        }
+      );
+
+      if (!manipResult.base64) {
+        Alert.alert('Compression failed', 'Could not process the image.');
+        return;
+      }
+
+      const dataUri = 'data:image/jpeg;base64,' + manipResult.base64;
+
+      if (__DEV__) {
+        const origKB = asset.size ? Math.round(asset.size / 1024) : '?';
+        const newKB = Math.round(manipResult.base64.length * 0.75 / 1024);
+        console.log('[image] compressed', origKB + 'KB ->', newKB + 'KB');
+      }
+
+      // Auto-offset: stack new images below existing ones on the same sheet
+      const existingOnSheet = (overlays || []).filter(
+        (o: any) => o.sheetName === selectedSheet
+      );
+      const nextRow = 2 + existingOnSheet.length * 5;  // 5 rows apart
+
+      await addOverlay({
+        id: 'img_' + Date.now(),
+        sheetName: selectedSheet,
+        row: nextRow,
+        col: 2,
+        type: 'image',
+        imageUri: dataUri,
+        size: 'medium',
+        createdAt: Date.now(),
       });
-      const mime = asset.mimeType || 'image/png';
-      const dataUri = `data:${mime};base64,${b64}`;
-      await addRawImage(selectedSheet, imagePosition.row, imagePosition.col, dataUri);
-    } catch {}
-    setImagePosition(null);
-  }, [selectedSheet, imagePosition, addRawImage]);
+    } catch (e: any) {
+      Alert.alert('Image error', e?.message || 'Failed to add image');
+    }
+  }, [selectedSheet, addOverlay]);
 
   const handleInsertChart = useCallback(async (spec: ChartSpec, position: { row: number; col: number }) => {
     if (!selectedSheet) return;
     await addRawChart(selectedSheet, position.row, position.col, spec);
     setChartPosition(null);
   }, [selectedSheet, addRawChart]);
+
+  const handleAddChart = useCallback(async (config: any, pngDataUri?: string) => {
+    if (!selectedSheet || !addOverlay) return;
+    await addOverlay({
+      id: 'chart_' + Date.now(),
+      sheetName: selectedSheet,
+      row: 5,
+      col: 5,
+      type: 'chart',
+      chartConfig: config,
+      imageUri: pngDataUri,
+      size: 'medium',
+      createdAt: Date.now(),
+    });
+    setShowChartModal(false);
+  }, [selectedSheet, addOverlay]);
 
   if (!workbook || workbook.sheets.length === 0) {
     return (
@@ -152,7 +217,7 @@ export default function FormScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerBtn}
-          onPress={() => setImagePosition({ row: focusCell?.row ?? 0, col: focusCell?.col ?? 0 })}
+          onPress={() => handleAddImage()}
           activeOpacity={0.7}
         >
           <Plus size={14} color="#0EA5E9" strokeWidth={2.5} />
@@ -160,7 +225,7 @@ export default function FormScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerBtn}
-          onPress={() => setChartPosition({ row: focusCell?.row ?? 0, col: focusCell?.col ?? 0 })}
+          onPress={() => setShowChartModal(true)}
           activeOpacity={0.7}
         >
           <Plus size={14} color="#0EA5E9" strokeWidth={2.5} />
@@ -187,15 +252,26 @@ export default function FormScreen() {
       <View style={styles.gridWrap}>
         {selectedRawSheet ? (
           <SheetGridView
-            rawSheet={selectedRawSheet}
-            onCellEdit={handleCellEdit}
-            onInsertRowAbove={handleInsertRowAbove}
-            onInsertRowBelow={handleInsertRowBelow}
-            onInsertColRight={handleInsertColRight}
-            onUpdateImage={handleUpdateImage}
-            onDeleteImage={handleDeleteImage}
-            focusCell={focusCell}
-          />
+              rawSheet={selectedRawSheet}
+              onCellEdit={handleCellEdit}
+              overlays={sheetOverlays}
+              onAddOverlay={addOverlay}
+              onUpdateOverlay={updateOverlay}
+              onDeleteOverlay={deleteOverlay}
+              focusCell={focusCell}
+              cellStyles={cellStyles}
+              onSetCellStyle={updateCellStyle}
+              onUpdateCellAndStyle={updateCellAndStyle}
+              rowStyles={rowStyles}
+              colStyles={colStyles}
+              onSetRowStyle={updateRowStyle}
+              onSetColStyle={updateColStyle}
+              onMoveRow={moveRow}
+              onMoveColumn={moveColumn}
+              merges={merges}
+              onAddMerge={addMerge}
+              onRemoveMerge={removeMerge}
+            />
         ) : (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>{t('noRecords')}</Text>
@@ -241,10 +317,9 @@ export default function FormScreen() {
 
       {/* Chart builder */}
       <ChartBuilderModal
-        visible={chartPosition !== null}
-        initialPosition={chartPosition ?? { row: 0, col: 0 }}
-        onClose={() => setChartPosition(null)}
-        onInsert={handleInsertChart}
+        visible={showChartModal}
+        onClose={() => setShowChartModal(false)}
+        onCreate={handleAddChart}
       />
     </View>
   );
@@ -296,3 +371,13 @@ const styles = StyleSheet.create({
   modalSaveBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#0EA5E9', alignItems: 'center' },
   modalSaveText: { color: '#FFFFFF', fontWeight: '700' },
 });
+
+function FormScreen() {
+  return (
+    <ScreenBoundary screenName="Quick Entry">
+      <FormScreenInner />
+    </ScreenBoundary>
+  );
+}
+
+export default FormScreen;

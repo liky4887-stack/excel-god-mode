@@ -52,6 +52,7 @@ export interface RawImage {
   rowSpan: number;
   colSpan: number;
   data: string;
+  dataUri?: string;
   kind?: 'image' | 'chart';
   chart?: ChartSpec;
 }
@@ -126,9 +127,44 @@ export interface TemplateData {
   records: Record<string, string | number>[];
   customFields: FieldMapping[];
   versions: SaveVersion[];
+  overlays?: GridOverlay[];
+  activityLog?: ActivityEntry[];
+  cellStyles?: Record<string, Record<string, { bold?: boolean; bg?: string; align?: 'left' | 'center' | 'right' }>>;
+  rowStyles?: Record<string, Record<string, { bold?: boolean; bg?: string; align?: 'left' | 'center' | 'right' }>>;
+  colStyles?: Record<string, Record<string, { bold?: boolean; bg?: string; align?: 'left' | 'center' | 'right' }>>;
+  merges?: CellMerge[];
 }
 
 export interface TemplateSnapshot {
   meta: TemplateMeta;
   data: TemplateData;
+}
+
+export interface GridOverlay {
+  id: string;
+  sheetName: string;
+  row: number;
+  col: number;
+  type: 'image' | 'chart';
+  imageUri?: string;
+  chartConfig?: any;
+  size?: 'small' | 'medium' | 'large';
+  createdAt?: number;
+  scalePercent?: number;
+}
+
+export interface ActivityEntry {
+  id: string;
+  ts: number;
+  kind: 'image_add' | 'image_move' | 'image_resize' | 'image_delete' | 'chart_add' | 'chart_move' | 'chart_resize' | 'chart_delete' | 'row_add' | 'column_add' | 'cell_edit';
+  sheetName: string;
+  summary: string;
+}
+
+export interface CellMerge {
+  sheet: string;
+  r1: number;
+  c1: number;
+  r2: number;
+  c2: number;
 }

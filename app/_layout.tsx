@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
@@ -6,9 +6,18 @@ import { LanguageProvider } from '@/hooks/useLanguage';
 import { ExcelProvider } from '@/hooks/ExcelProvider';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import SplashScreen from '@/components/SplashScreen';
+import { installCrashGuard } from '@/lib/crashGuard';
 
 export default function RootLayout() {
   useFrameworkReady();
+
+  useEffect(() => {
+    try {
+      installCrashGuard();
+    } catch (e) {
+      if (__DEV__) console.warn('[crashGuard] install failed:', e);
+    }
+  }, []);
   const [splashDone, setSplashDone] = useState(false);
 
   return (
