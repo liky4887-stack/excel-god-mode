@@ -43,6 +43,7 @@
       "eas": {
         "projectId": "5de33779-a55b-48bc-a78e-3eb43b9e47bc"
       }
-    }
+    },
+    "icon": "./assets/images/icon.jpg"
   }
 }
