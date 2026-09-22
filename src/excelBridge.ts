@@ -214,14 +214,6 @@ export function readRawSheet(wb: XLSX.WorkBook, sheetName: string): RawSheet {
   const rowHeights: number[] = (ws['!rows'] || []).map((row: XLSX.RowInfo): number => row.hpt || (row.hpx ? row.hpx : 0)).filter((h: number) => h > 0);
 
 
-  // Trim trailing fully-empty rows so user-added rows appear where expected
-  while (matrix.length > 0) {
-    const last = matrix[matrix.length - 1];
-    const allEmpty = last.every((c: any) => !c || c.v === null || c.v === undefined || String(c.v).trim() === '');
-    if (allEmpty) matrix.pop();
-    else break;
-  }
-
   const sheetIndex = wb.SheetNames.indexOf(sheetName);
   const sheetPath = 'xl/worksheets/sheet' + (sheetIndex + 1) + '.xml';
   const images = extractImagesForSheet((wb as any).files, sheetPath);

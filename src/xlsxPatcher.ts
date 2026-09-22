@@ -339,6 +339,7 @@ export interface AppStyleBundle {
   cellStyles?: Record<string, Record<string, { bold?: boolean; bg?: string; align?: 'left' | 'center' | 'right' }>>;
   rowStyles?: Record<string, Record<string, { bold?: boolean; bg?: string; align?: 'left' | 'center' | 'right' }>>;
   colStyles?: Record<string, Record<string, { bold?: boolean; bg?: string; align?: 'left' | 'center' | 'right' }>>;
+  newSheets?: Array<{ name: string; headers: string[]; rows: any[][] }>;
   overlays?: Array<{
     id: string;
     sheetName: string;
@@ -349,6 +350,149 @@ export interface AppStyleBundle {
     size?: 'small' | 'medium' | 'large';
     scalePercent?: number;
   }>;
+}
+
+
+// ============================================================================
+// Add brand-new sheets to the xlsx zip.
+// Creates xl/worksheets/sheetN.xml, wires it into xl/workbook.xml, its rels,
+// and [Content_Types].xml. Appends <sheet> entries in workbook.xml.
+// ============================================================================
+
+function sheetXmlFromAoa(headers: string[], rows: any[][]): string {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+
+  const colLetter = (i: number): string => {
+    let s = '';
+    let n = i + 1;
+    while (n > 0) {
+      const r = (n - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  };
+
+  const cells: string[] = [];
+  const allRows: any[][] = [headers, ...rows];
+
+  allRows.forEach((row, rIdx) => {
+    if (!row || row.length === 0) return;
+    const rowNum = rIdx + 1;
+    const rowCells: string[] = [];
+    row.forEach((v, cIdx) => {
+      if (v === null || v === undefined || v === '') return;
+      const ref = colLetter(cIdx) + rowNum;
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        rowCells.push(`<c r="${ref}" t="n"><v>${v}</v></c>`);
+      } else {
+        rowCells.push(
+          `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${esc(String(v))}</t></is></c>`
+        );
+      }
+    });
+    if (rowCells.length) {
+      cells.push(`<row r="${rowNum}">${rowCells.join('')}</row>`);
+    }
+  });
+
+  const maxCol = Math.max(headers.length, ...rows.map((r) => r.length), 1);
+  // Force the range to at least cover headers + blank rows so Excel keeps
+  // the full grid dimensions even when rows are empty.
+  const maxRow = Math.max(allRows.length, 16);
+  const dim = `A1:${colLetter(maxCol - 1)}${maxRow}`;
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
+    `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<dimension ref="${dim}"/>` +
+    `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
+    `<sheetFormatPr defaultRowHeight="15"/>` +
+    `<sheetData>${cells.join('')}</sheetData>` +
+    `</worksheet>`
+  );
+}
+
+function injectNewSheets(
+  files: Record<string, Uint8Array>,
+  newSheets: Array<{ name: string; headers: string[]; rows: any[][] }>
+): void {
+  if (!newSheets.length) return;
+
+  let wbXml = strFromU8(files['xl/workbook.xml']);
+  let relsXml = strFromU8(files['xl/_rels/workbook.xml.rels']);
+  let ctXml = strFromU8(files['[Content_Types].xml']);
+
+  // Find the next free sheet number
+  let nextSheetNum = 1;
+  while (files[`xl/worksheets/sheet${nextSheetNum}.xml`]) nextSheetNum++;
+
+  // Find the highest rId in rels
+  let maxRid = 0;
+  const ridRe = /Id="rId(\d+)"/g;
+  let rm: RegExpExecArray | null;
+  while ((rm = ridRe.exec(relsXml))) {
+    const n = parseInt(rm[1], 10);
+    if (n > maxRid) maxRid = n;
+  }
+
+  // Find the highest sheetId in workbook.xml <sheet> tags
+  let maxSheetId = 0;
+  const sidRe = /<sheet[^>]*sheetId="(\d+)"/g;
+  let sm: RegExpExecArray | null;
+  while ((sm = sidRe.exec(wbXml))) {
+    const n = parseInt(sm[1], 10);
+    if (n > maxSheetId) maxSheetId = n;
+  }
+
+  const addedRels: string[] = [];
+  const addedSheets: string[] = [];
+  const addedOverrides: string[] = [];
+
+  for (const ns of newSheets) {
+    const sheetNum = nextSheetNum++;
+    const rid = `rId${++maxRid}`;
+    const sheetId = ++maxSheetId;
+    const fileName = `sheet${sheetNum}.xml`;
+
+    // 1. Write the worksheet XML
+    files[`xl/worksheets/${fileName}`] = strToU8(
+      sheetXmlFromAoa(ns.headers, ns.rows)
+    );
+
+    // 2. Register in workbook rels
+    addedRels.push(
+      `<Relationship Id="${rid}" ` +
+      `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" ` +
+      `Target="worksheets/${fileName}"/>`
+    );
+
+    // 3. Register in workbook.xml
+    addedSheets.push(
+      `<sheet name="${ns.name.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}" ` +
+      `sheetId="${sheetId}" r:id="${rid}"/>`
+    );
+
+    // 4. Register in [Content_Types]
+    addedOverrides.push(
+      `<Override PartName="/xl/worksheets/${fileName}" ` +
+      `ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+    );
+
+    if (__DEV__) console.log('[xlsxPatcher] added sheet', ns.name, '→', fileName);
+  }
+
+  // Apply all edits
+  relsXml = relsXml.replace(/<\/Relationships>/, addedRels.join('') + '</Relationships>');
+  wbXml = wbXml.replace(/<\/sheets>/, addedSheets.join('') + '</sheets>');
+  ctXml = ctXml.replace(/<\/Types>/, addedOverrides.join('') + '</Types>');
+
+  files['xl/workbook.xml'] = strToU8(wbXml);
+  files['xl/_rels/workbook.xml.rels'] = strToU8(relsXml);
+  files['[Content_Types].xml'] = strToU8(ctXml);
 }
 
 export function patchXlsxWithEdits(
@@ -500,6 +644,15 @@ export function patchXlsxWithEdits(
   // Write back modified styles.xml
   if (styleRegistrar) {
     files['xl/styles.xml'] = strToU8(styleRegistrar.finalize());
+  }
+
+  // Inject brand-new sheets
+  if (appStyles.newSheets && appStyles.newSheets.length > 0) {
+    try {
+      injectNewSheets(files, appStyles.newSheets);
+    } catch (e) {
+      if (__DEV__) console.warn('[xlsxPatcher] new sheet injection failed:', e);
+    }
   }
 
   // Inject user-added images

@@ -64,6 +64,19 @@ export default function ExportScreen() {
           cellStyles: (activeTemplate as any)?.cellStyles,
           rowStyles: (activeTemplate as any)?.rowStyles,
           colStyles: (activeTemplate as any)?.colStyles,
+          newSheets: ((activeTemplate as any)?.newSheets || []).map((s: any) => {
+            // Pull rows from the raw matrix for this sheet
+            const raw = (activeTemplate as any)?.workbook?.rawSheets?.[s.name];
+            const rows: any[][] = [];
+            if (raw && raw.matrix) {
+              // Skip the header row (row 0)
+              for (let r = 1; r < raw.matrix.length; r++) {
+                const rowCells = raw.matrix[r] || [];
+                rows.push(rowCells.map((c: any) => (c && c.v != null ? c.v : null)));
+              }
+            }
+            return { name: s.name, headers: s.headers, rows };
+          }),
           overlays: (overlays || []).map((o: any) => ({
             id: o.id,
             sheetName: o.sheetName,

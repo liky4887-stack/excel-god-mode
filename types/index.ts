@@ -133,6 +133,7 @@ export interface TemplateData {
   rowStyles?: Record<string, Record<string, { bold?: boolean; bg?: string; align?: 'left' | 'center' | 'right' }>>;
   colStyles?: Record<string, Record<string, { bold?: boolean; bg?: string; align?: 'left' | 'center' | 'right' }>>;
   merges?: CellMerge[];
+  newSheets?: Array<{ name: string; headers: string[] }>;
 }
 
 export interface TemplateSnapshot {
@@ -167,4 +168,9 @@ export interface CellMerge {
   c1: number;
   r2: number;
   c2: number;
+}
+
+export interface NewSheetDef {
+  name: string;
+  headers?: string[];
 }

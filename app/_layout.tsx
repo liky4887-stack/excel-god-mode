@@ -35,6 +35,7 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="import" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="export" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="create-template" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="+not-found" />
               </Stack>
               <StatusBar style="light" />

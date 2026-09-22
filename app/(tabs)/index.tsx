@@ -17,6 +17,10 @@ function HomeScreenInner() {
     router.push('/import');
   }, [router]);
 
+  const handleCreateTemplate = useCallback(() => {
+    router.push('/create-template' as any);
+  }, [router]);
+
   const handleTemplatePress = useCallback((id: string) => {
     switchTemplate(id);
   }, [switchTemplate]);
@@ -92,6 +96,14 @@ function HomeScreenInner() {
           </TouchableOpacity>
         )}
       />
+
+      <TouchableOpacity style={styles.createNewBtn} onPress={handleCreateTemplate} activeOpacity={0.75}>
+        <Plus size={18} color="#0EA5E9" strokeWidth={2} />
+        <Text style={styles.createNewBtnText}>Create New Template</Text>
+      </TouchableOpacity>
+
+      <View style={{ height: 20 }} />
+
       <TouchableOpacity style={styles.importNewBtn} onPress={handlePickAndImport}>
         <Plus size={18} color="#3B9EFF" strokeWidth={2} />
         <Text style={styles.importNewBtnText}>Import New Template</Text>
@@ -169,7 +181,21 @@ const styles = StyleSheet.create({
   templateMeta: { fontSize: 11, color: '#666', textAlign: 'center' },
   activeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: 'rgba(0,217,163,0.15)', marginTop: 4 },
   activeBadgeText: { fontSize: 10, fontWeight: '700', color: '#00D9A3' },
-  importNewBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(59,158,255,0.3)', backgroundColor: 'rgba(59,158,255,0.06)', marginBottom: 20 },
+  createNewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(14,165,233,0.4)',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 12,
+    backgroundColor: 'rgba(14,165,233,0.08)',
+  },
+  createNewBtnText: { fontSize: 14, fontWeight: '700', color: '#0EA5E9' },
+  importNewBtn: {
+    marginBottom: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(59,158,255,0.3)', backgroundColor: 'rgba(59,158,255,0.06)', },
   importNewBtnText: { fontSize: 14, fontWeight: '600', color: '#3B9EFF' },
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 28 },
   statCard: { flex: 1, backgroundColor: '#121212', borderWidth: 1, borderColor: '#1E1E1E', borderRadius: 14, padding: 14, alignItems: 'center', gap: 4 },

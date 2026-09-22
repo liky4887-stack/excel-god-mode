@@ -27,13 +27,16 @@ function FormScreenInner() {
     addRawImage,
     addRawChart,
     navigationTarget,
-    setNavigationTarget, updateOverlay, deleteOverlay, addOverlay, overlays, updateCellStyle, cellStyles, updateRowStyle, updateColStyle, moveRow, moveColumn, rowStyles, colStyles, addMerge, removeMerge, merges, updateCellAndStyle} = useExcel();
+    setNavigationTarget, updateOverlay, deleteOverlay, addOverlay, overlays, updateCellStyle, cellStyles, updateRowStyle, updateColStyle, moveRow, moveColumn, rowStyles, colStyles, addMerge, removeMerge, merges, updateCellAndStyle, addSheet, deleteSheet} = useExcel();
 
   const [selectedSheet, setSelectedSheet] = useState('');
   const [focusCell, setFocusCell] = useState<{ row: number; col: number; nonce: number } | null>(null);
   const [imagePosition, setImagePosition] = useState<{ row: number; col: number } | null>(null);
   const [chartPosition, setChartPosition] = useState<{ row: number; col: number } | null>(null);
   const [showChartModal, setShowChartModal] = useState(false);
+  const [showAddSheet, setShowAddSheet] = useState(false);
+  const [newSheetName, setNewSheetName] = useState('');
+  const [newSheetHeaders, setNewSheetHeaders] = useState('');
 
   const workbook = activeTemplate?.workbook;
 
@@ -69,6 +72,58 @@ function FormScreenInner() {
   const handleImport = useCallback(() => {
     router.push('/import');
   }, [router]);
+
+  const handleOpenAddSheet = useCallback(() => {
+    setNewSheetName('');
+    setNewSheetHeaders('');
+    setShowAddSheet(true);
+  }, []);
+
+  const handleConfirmAddSheet = useCallback(async () => {
+    const name = newSheetName.trim();
+    if (!name) {
+      Alert.alert('Sheet name required', 'Please enter a name for the new sheet.');
+      return;
+    }
+    const existing = (workbook?.sheets || []).map((s) => s.name.toLowerCase());
+    if (existing.includes(name.toLowerCase())) {
+      Alert.alert('Name already used', 'A sheet with that name already exists.');
+      return;
+    }
+    const headers = newSheetHeaders
+      .split(',')
+      .map((h) => h.trim())
+      .filter(Boolean);
+
+    await addSheet(name, headers);
+    setShowAddSheet(false);
+    setSelectedSheet(name); // switch to the new sheet
+  }, [newSheetName, newSheetHeaders, workbook, addSheet]);
+
+  const handleDeleteSheet = useCallback((sheetName: string) => {
+    if (!workbook || workbook.sheets.length <= 1) {
+      Alert.alert('Cannot delete', 'You need at least one sheet.');
+      return;
+    }
+    Alert.alert(
+      'Delete sheet?',
+      `"${sheetName}" and all its data will be removed from the export.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteSheet(sheetName);
+            if (selectedSheet === sheetName) {
+              const remaining = workbook.sheets.filter((s) => s.name !== sheetName);
+              if (remaining.length) setSelectedSheet(remaining[0].name);
+            }
+          },
+        },
+      ]
+    );
+  }, [workbook, deleteSheet, selectedSheet]);
 
   const selectedRawSheet = workbook?.rawSheets?.[selectedSheet] ?? null;
 
@@ -240,12 +295,22 @@ function FormScreenInner() {
               key={s.name}
               style={[styles.sheetTab, selectedSheet === s.name && styles.sheetTabActive]}
               onPress={() => handleSelectSheet(s.name)}
+              onLongPress={() => handleDeleteSheet(s.name)}
             >
               <Text style={[styles.sheetTabText, selectedSheet === s.name && styles.sheetTabTextActive]}>
                 {s.name}
               </Text>
             </TouchableOpacity>
           ))}
+
+          <TouchableOpacity
+            style={styles.addSheetTab}
+            onPress={handleOpenAddSheet}
+            activeOpacity={0.7}
+          >
+            <Plus size={16} color="#0EA5E9" strokeWidth={2.5} />
+            <Text style={styles.addSheetTabText}>Sheet</Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
 
@@ -278,6 +343,54 @@ function FormScreenInner() {
           </View>
         )}
       </View>
+
+      {/* Add Sheet modal */}
+      <Modal visible={showAddSheet} transparent animationType="fade" onRequestClose={() => setShowAddSheet(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.addSheetOverlay}
+        >
+          <View style={styles.addSheetCard}>
+            <Text style={styles.addSheetTitle}>Add Sheet</Text>
+
+            <Text style={styles.addSheetLabel}>SHEET NAME</Text>
+            <TextInput
+              style={styles.addSheetInput}
+              value={newSheetName}
+              onChangeText={setNewSheetName}
+              placeholder="e.g. Fuel Log"
+              placeholderTextColor="#5A6577"
+              autoCapitalize="words"
+              autoFocus
+            />
+
+            <Text style={styles.addSheetLabel}>COLUMN HEADERS (comma-separated, optional)</Text>
+            <TextInput
+              style={[styles.addSheetInput, { minHeight: 60, textAlignVertical: 'top' }]}
+              value={newSheetHeaders}
+              onChangeText={setNewSheetHeaders}
+              placeholder="Date, Truck ID, Fuel, Cost"
+              placeholderTextColor="#5A6577"
+              multiline
+            />
+
+            <View style={styles.addSheetActions}>
+              <TouchableOpacity
+                style={styles.addSheetCancelBtn}
+                onPress={() => setShowAddSheet(false)}
+              >
+                <Text style={styles.addSheetCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addSheetConfirmBtn}
+                onPress={handleConfirmAddSheet}
+              >
+                <Text style={styles.addSheetConfirmText}>Add Sheet</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Image position picker */}
       <Modal visible={imagePosition !== null} transparent animationType="fade" onRequestClose={() => setImagePosition(null)}>
@@ -342,6 +455,67 @@ const styles = StyleSheet.create({
   },
   headerBtnText: { color: '#0EA5E9', fontSize: 11, fontWeight: '700' },
   sheetTabs: { marginBottom: 12 },
+  addSheetTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(14,165,233,0.4)',
+    backgroundColor: 'rgba(14,165,233,0.05)',
+    marginRight: 8,
+  },
+  addSheetTabText: { fontSize: 13, color: '#0EA5E9', fontWeight: '700' },
+  addSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(7,9,13,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  addSheetCard: {
+    backgroundColor: '#0F131A',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#252E3D',
+    padding: 20,
+    width: '100%',
+    maxWidth: 420,
+  },
+  addSheetTitle: { color: '#EDF1F8', fontSize: 20, fontWeight: '800', marginBottom: 16 },
+  addSheetLabel: { color: '#8894A8', fontSize: 10, fontWeight: '700', letterSpacing: 1.4, marginTop: 12, marginBottom: 6 },
+  addSheetInput: {
+    backgroundColor: '#07090D',
+    borderWidth: 1,
+    borderColor: '#252E3D',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#EDF1F8',
+    fontSize: 15,
+  },
+  addSheetActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  addSheetCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#252E3D',
+    alignItems: 'center',
+  },
+  addSheetCancelText: { color: '#8894A8', fontSize: 15, fontWeight: '600' },
+  addSheetConfirmBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#0EA5E9',
+    alignItems: 'center',
+  },
+  addSheetConfirmText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+
   sheetTab: {
     paddingHorizontal: 16,
     paddingVertical: 10,

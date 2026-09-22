@@ -9,6 +9,7 @@ import {
   deleteTemplate as deleteTemplateStorage,
 } from '@/src/storage';
 import { readWorkbook, bufferToBase64 } from '@/src/excelBridge';
+import { createBlankXlsx, NewSheetDef } from '@/src/xlsxCreate';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 
@@ -55,6 +56,9 @@ interface ExcelContextValue {
   rowStyles: Record<string, Record<string, { bold?: boolean; bg?: string }>>;
   colStyles: Record<string, Record<string, { bold?: boolean; bg?: string }>>;
   addMerge: (sheetName: string, r1: number, c1: number, r2: number, c2: number) => Promise<void>;
+  createTemplate: (name: string, sheets: NewSheetDef[]) => Promise<void>;
+  addSheet: (sheetName: string, headers?: string[]) => Promise<void>;
+  deleteSheet: (sheetName: string) => Promise<void>;
   removeMerge: (sheetName: string, r1: number, c1: number) => Promise<void>;
   merges: CellMerge[];
   cellStyles: Record<string, Record<string, { bold?: boolean; bg?: string }>>;
@@ -138,7 +142,149 @@ export function ExcelProvider({ children }: { children: ReactNode }) {
     persistRef.current?.(data, { immediate: false });
   }, [activeTemplateId, activeTemplate]);
 
-    const addMerge = useCallback(async (sheetName: string, r1: number, c1: number, r2: number, c2: number) => {
+    const createTemplate = useCallback(async (name: string, sheets: NewSheetDef[]) => {
+    try {
+      // 1. Build a blank xlsx
+      const bytes = createBlankXlsx(sheets);
+
+      // 2. Save the file to permanent storage
+      const id = uid();
+      const dir = `${FileSystem.documentDirectory}templates/`;
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      }
+      const permanentUri = `${dir}${id}.xlsx`;
+      const b64 = bufferToBase64(bytes.buffer as ArrayBuffer);
+      await FileSystem.writeAsStringAsync(permanentUri, b64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // 3. Parse it
+      const wb = readWorkbook(bytes.buffer as ArrayBuffer, `${name}.xlsx`);
+
+      const meta: TemplateMeta = {
+        id,
+        name,
+        fileName: `${name}.xlsx`,
+        originalFileUri: permanentUri,
+        importedAt: Date.now(),
+        sheetCount: wb.sheets.length,
+        columnCount: wb.mappings.length,
+        recordCount: wb.records.length,
+        lastEditedAt: Date.now(),
+      };
+
+      const data: TemplateData = {
+        workbook: { ...wb, originalBase64: '', originalFileUri: permanentUri } as any,
+        mappings: wb.mappings,
+        records: wb.records,
+        customFields: [],
+        versions: [],
+        overlays: [],
+      };
+
+      await saveTemplateMeta(meta);
+      await saveTemplateData(id, data);
+      await setActiveTemplateId(id);
+
+      setTemplates((prev) => [meta, ...prev]);
+      setActiveTemplateIdState(id);
+      setActiveTemplate(data);
+      setOverlays([]);
+
+      if (__DEV__) console.log('[createTemplate] created', name, id);
+    } catch (e) {
+      if (__DEV__) console.warn('[createTemplate] failed:', e);
+      throw e;
+    }
+  }, []);
+
+  const addSheet = useCallback(async (sheetName: string, headers: string[] = []) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const name = sheetName.trim();
+    if (!name) return;
+
+    // Check for name collisions against existing sheets
+    const existing = new Set(activeTemplate.workbook.sheets.map((s) => s.name.toLowerCase()));
+    if (existing.has(name.toLowerCase())) {
+      if (__DEV__) console.log('[addSheet] name exists:', name);
+      return;
+    }
+
+    // 1. Add to rawSheets as a ready-to-fill grid
+    const DEFAULT_COLS = 6;
+    const BLANK_ROWS = 15;
+    const colCount = Math.max(headers.length, DEFAULT_COLS);
+
+    const paddedHeaders = headers.slice();
+    while (paddedHeaders.length < colCount) paddedHeaders.push('');
+
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    const matrix: any[] = [];
+
+    // Header row (always present, so the grid anchors correctly)
+    matrix.push(paddedHeaders.map((h) => ({ v: h, w: h })));
+
+    // Blank rows ready to type into
+    for (let i = 0; i < BLANK_ROWS; i++) {
+      matrix.push(Array.from({ length: colCount }, () => ({ v: '' })));
+    }
+
+    rawSheets[name] = {
+      name,
+      rowCount: matrix.length,
+      colCount,
+      matrix,
+      merges: [],
+      origin: { row: 1, col: 1 },
+    };
+
+    // 2. Add to workbook.sheets with headers
+    const sheets = [...activeTemplate.workbook.sheets];
+    sheets.push({
+      name,
+      rowCount: matrix.length,
+      colCount,
+      headers: paddedHeaders,
+      headerRow: 0,
+      keptColumnIndexes: Array.from({ length: colCount }, (_, i) => i),
+    } as any);
+
+    // 3. Track as a "new sheet" for export injection
+    const currentNew = activeTemplate.newSheets || [];
+    const newSheets = [...currentNew, { name, headers }];
+
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, rawSheets, sheets },
+      newSheets,
+    };
+
+    setActiveTemplate(data);
+    persistRef.current?.(data, { immediate: true });
+
+    if (__DEV__) console.log('[addSheet]', name, 'headers:', headers.join(','));
+  }, [activeTemplateId, activeTemplate]);
+
+  const deleteSheet = useCallback(async (sheetName: string) => {
+    if (!activeTemplateId || !activeTemplate) return;
+    const sheets = activeTemplate.workbook.sheets.filter((s) => s.name !== sheetName);
+    const rawSheets = { ...(activeTemplate.workbook.rawSheets || {}) };
+    delete rawSheets[sheetName];
+    const newSheets = (activeTemplate.newSheets || []).filter((s) => s.name !== sheetName);
+
+    const data: TemplateData = {
+      ...activeTemplate,
+      workbook: { ...activeTemplate.workbook, sheets, rawSheets },
+      newSheets,
+    };
+    setActiveTemplate(data);
+    persistRef.current?.(data, { immediate: true });
+    if (__DEV__) console.log('[deleteSheet]', sheetName);
+  }, [activeTemplateId, activeTemplate]);
+
+  const addMerge = useCallback(async (sheetName: string, r1: number, c1: number, r2: number, c2: number) => {
     if (!activeTemplateId || !activeTemplate) return;
     const current = activeTemplate.merges || [];
     const rowLo = Math.min(r1, r2), rowHi = Math.max(r1, r2);
@@ -887,6 +1033,9 @@ export function ExcelProvider({ children }: { children: ReactNode }) {
       activityLog: (activeTemplate?.activityLog || []),
       updateCellStyle,
       updateCellAndStyle,
+      createTemplate,
+      addSheet,
+      deleteSheet,
       addMerge,
       removeMerge,
       merges: (activeTemplate?.merges || []),
